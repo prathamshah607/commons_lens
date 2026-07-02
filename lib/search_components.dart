@@ -190,8 +190,8 @@ class _MediaCardState extends State<MediaCard> {
     final params = <String, String>{'id': widget.item.title, ...SearchUrlCodec.toQueryParams(widget.searchState)};
     final uniqueUrl = Uri(path: '/view', queryParameters: params).toString();
     
-    context.go(
-      uniqueUrl,
+    context.push(
+      uniqueUrl, extra: widget.index
     );
   }
 

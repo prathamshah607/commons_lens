@@ -2,11 +2,13 @@ import 'package:commonslens/router.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
+import 'package:go_router/go_router.dart';
 
 void main() {
   // Use clean path-based URLs (e.g. /view?id=...) instead of the default
   // hash-based ones (e.g. /#/view?id=...), so URLs are shareable and
   // predictable while still fully supporting deep links and reloads.
+  GoRouter.optionURLReflectsImperativeAPIs = true;
   usePathUrlStrategy();
   runApp(
     const ProviderScope(

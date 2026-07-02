@@ -70,13 +70,16 @@ class _AssetViewerState extends ConsumerState<AssetViewer> {
       final params = GoRouterState.of(context).uri.queryParameters;
 
       if (SearchUrlCodec.hasSearchContext(params)) {
-        // Hydrate the global brain from the URL
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          ref.read(searchControllerProvider.notifier).hydrateFromUrl(params);
+
+          // THE SIMPLE FIX: Only hydrate if memory is empty!
+          // If we tapped an image in-app, the cache is hot, so do nothing.
+          if (ref.read(searchControllerProvider).activeSession.items.isEmpty) {
+            ref.read(searchControllerProvider.notifier).hydrateFromUrl(params);
+          }
         });
       } else {
-        // Pure standalone link (no search context)
         _isStandalone = true;
         _fetchInjectedTarget();
       }
@@ -219,7 +222,15 @@ class _AssetViewerState extends ConsumerState<AssetViewer> {
           elevation: 0,
           leading: IconButton(
             icon: const Icon(Icons.close, color: Colors.white),
-            onPressed: () => context.go(widget.returnUrl),
+            onPressed: () {
+              // If they clicked an image to get here, pop it off.
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                // If they pasted a link directly into the browser, fallback to go()
+                context.go(widget.returnUrl);
+              }
+            },
           ),
         ),
         body: const Center(
