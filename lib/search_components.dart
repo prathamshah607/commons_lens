@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
-import 'router.dart';
 import 'search_models.dart';
 import 'search_url_codec.dart';
 
@@ -189,12 +188,10 @@ class _MediaCardState extends State<MediaCard> {
 
   Future<void> _handleTap() async {
     final params = <String, String>{'id': widget.item.title, ...SearchUrlCodec.toQueryParams(widget.searchState)};
-    final searchUrl = GoRouterState.of(context).uri.toString();
     final uniqueUrl = Uri(path: '/view', queryParameters: params).toString();
     
     context.go(
       uniqueUrl,
-      extra: ViewerState(notifier: widget.searchResultsNotifier, index: widget.index, onLoadMore: widget.onLoadMore, searchState: widget.searchState, returnUrl: searchUrl),
     );
   }
 
@@ -294,10 +291,6 @@ class _MediaPreviewState extends State<MediaPreview> {
   }
   @override
   void dispose() {
-    if (_shouldLoad) {
-      final thumb = widget.item.thumb;
-      if (thumb.isNotEmpty) PaintingBinding.instance.imageCache.evict(NetworkImage(thumb));
-    }
     super.dispose();
   }
   bool _isSafeImageUrl(String url) {

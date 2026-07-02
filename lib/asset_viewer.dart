@@ -6,147 +6,80 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'; // <-- Added Riverpod
 
 import 'search_models.dart';
-import 'router.dart';
 import 'search_service.dart';
 import 'search_url_codec.dart';
+import 'search_controller.dart'; // <-- Link to the brain
 
-/// How this viewer instance got its gallery data.
-enum _ViewerMode {
-  /// Opened in-app from the search grid: gallery + pagination are already
-  /// live in memory via [AssetViewer.searchResultsNotifier].
-  gallery,
-
-  /// Reached via a URL that carries full search context (q + filters) but
-  /// no in-memory gallery.
-  query,
-
-  /// A bare `/view?id=...` link with no search context at all.
-  standalone,
-}
-
-class AssetViewer extends StatefulWidget {
-  final ValueNotifier<List<SearchItem>>? searchResultsNotifier;
-  final int initialIndex;
-  final VoidCallback? onLoadMore;
-
-  final String? explicitFileId;
-  final SearchState? searchState;
+class AssetViewer extends ConsumerStatefulWidget {
+  final String fileId;
   final String returnUrl;
-  final _ViewerMode mode;
 
   const AssetViewer({
-    Key? key,
-    required this.searchResultsNotifier,
-    required this.initialIndex,
-    required this.onLoadMore,
+    super.key,
+    required this.fileId,
     required this.returnUrl,
-    this.explicitFileId,
-    this.searchState,
-  })  : mode = _ViewerMode.gallery,
-        super(key: key);
-
-  const AssetViewer.standalone({
-    Key? key,
-    required String fileId,
-    required this.returnUrl,
-  })  : searchResultsNotifier = null,
-        initialIndex = 0,
-        onLoadMore = null,
-        explicitFileId = fileId,
-        searchState = null,
-        mode = _ViewerMode.standalone,
-        super(key: key);
-
-  const AssetViewer.fromQuery({
-    Key? key,
-    required String fileId,
-    required SearchState searchState,
-    required this.returnUrl,
-  })  : searchResultsNotifier = null,
-        initialIndex = 0,
-        onLoadMore = null,
-        explicitFileId = fileId,
-        searchState = searchState,
-        mode = _ViewerMode.query,
-        super(key: key);
+  });
 
   @override
-  State<AssetViewer> createState() => _AssetViewerState();
+  ConsumerState<AssetViewer> createState() => _AssetViewerState();
 }
 
-class _QueryGalleryController {
-  _QueryGalleryController(this._service, this._searchState);
-
-  final SearchService _service;
-  final SearchState _searchState;
-  Map<String, dynamic>? continueParams;
-  bool hasMore = true;
-  bool _loadingMore = false;
-
-  Future<void> loadMore(ValueNotifier<List<SearchItem>> notifier) async {
-    if (_loadingMore || !hasMore) return;
-
-    _loadingMore = true;
-    final more =
-        await _service.fetchPage(_searchState, continueParams: continueParams);
-    _loadingMore = false;
-    if (more == null) return;
-
-    final existingUrls = notifier.value.map((e) => e.url).toSet();
-    notifier.value = [
-      ...notifier.value,
-      ...more.items.where((it) => !existingUrls.contains(it.url)),
-    ];
-    continueParams = more.continueParams;
-    hasMore = more.continueParams != null;
-  }
-}
-
-class _AssetViewerState extends State<AssetViewer> {
+class _AssetViewerState extends ConsumerState<AssetViewer> {
   late PageController _pageController;
-  late int _currentIndex;
+  late int _currentIndex; // Removed the -1
   bool _showMobileInfo = false;
 
-  late ValueNotifier<List<SearchItem>> _activeNotifier;
-  bool _isLoading = false;
+  bool _urlHydrated = false;
   bool _suppressUrlSync = false;
 
   late FocusNode _focusNode;
-
   final SearchService _service = SearchService();
-  _QueryGalleryController? _queryController;
 
-  bool get _hasGallery => widget.mode != _ViewerMode.standalone;
+  bool _isStandalone = false;
+  SearchItem? _injectedTarget;
+  bool _isFetchingInjected = false;
 
   @override
   void initState() {
     super.initState();
-    _currentIndex = widget.initialIndex;
-    _pageController = PageController(initialPage: widget.initialIndex);
+
+    // PRE-CALCULATE THE INDEX FROM THE HOT CACHE
+    final session = ref.read(searchControllerProvider).activeSession;
+    final targetId = _normalizedTitle(widget.fileId);
+    int startIndex = session.items
+        .indexWhere((it) => _normalizedTitle(it.title) == targetId);
+
+    // Set the state and page controller immediately
+    _currentIndex = startIndex >= 0 ? startIndex : 0;
+    _pageController = PageController(initialPage: _currentIndex);
 
     _focusNode = FocusNode();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focusNode.requestFocus();
     });
+  }
 
-    switch (widget.mode) {
-      case _ViewerMode.gallery:
-        _activeNotifier = widget.searchResultsNotifier!;
-        break;
-      case _ViewerMode.standalone:
-        _activeNotifier = ValueNotifier([]);
-        _isLoading = true;
-        _fetchStandaloneAsset();
-        break;
-      case _ViewerMode.query:
-        _activeNotifier = ValueNotifier([]);
-        _queryController =
-            _QueryGalleryController(_service, widget.searchState!);
-        _isLoading = true;
-        _fetchQueryGallery();
-        break;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_urlHydrated) {
+      _urlHydrated = true;
+      final params = GoRouterState.of(context).uri.queryParameters;
+
+      if (SearchUrlCodec.hasSearchContext(params)) {
+        // Hydrate the global brain from the URL
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          ref.read(searchControllerProvider.notifier).hydrateFromUrl(params);
+        });
+      } else {
+        // Pure standalone link (no search context)
+        _isStandalone = true;
+        _fetchInjectedTarget();
+      }
     }
   }
 
@@ -154,121 +87,66 @@ class _AssetViewerState extends State<AssetViewer> {
   void didUpdateWidget(covariant AssetViewer oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    final newFileId = _normalizedTitle(widget.explicitFileId ?? '');
-    final oldFileId = _normalizedTitle(oldWidget.explicitFileId ?? '');
+    final newFileId = _normalizedTitle(widget.fileId);
+    final oldFileId = _normalizedTitle(oldWidget.fileId);
 
     if (newFileId.isEmpty || newFileId == oldFileId) return;
-    if (_isLoading || _activeNotifier.value.isEmpty) return;
 
-    final newIndex = _activeNotifier.value.indexWhere(
-      (it) => _normalizedTitle(it.title) == newFileId,
-    );
+    // Handle Browser Back/Forward buttons
+    final items = _getCombinedItems();
+    if (items.isEmpty) return;
 
-    if (newIndex == -1 || newIndex == _currentIndex) return;
-
-    _suppressUrlSync = true;
-    _currentIndex = newIndex;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_pageController.hasClients) {
-        _suppressUrlSync = false;
-        return;
+    if (_currentIndex >= 0 && _currentIndex < items.length) {
+      if (_normalizedTitle(items[_currentIndex].title) == newFileId) {
+        return; // URL changed because of our own swipe. Do nothing.
       }
-      _pageController.jumpToPage(newIndex);
-      setState(() {});
-    });
+    }
+
+    int found =
+        items.indexWhere((it) => _normalizedTitle(it.title) == newFileId);
+    if (found != -1) {
+      _suppressUrlSync = true;
+      _currentIndex = found;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _pageController.hasClients) {
+          _pageController.jumpToPage(found);
+          setState(() {});
+        }
+      });
+    } else if (!_isFetchingInjected) {
+      _fetchInjectedTarget();
+    }
   }
 
   String _normalizedTitle(String title) =>
       title.replaceFirst('File:', '').trim().toLowerCase();
 
-  Future<void> _fetchStandaloneAsset() async {
-    final fileId = widget.explicitFileId ?? '';
-    final item = fileId.isEmpty ? null : await _service.fetchSingleItem(fileId);
-
-    if (!mounted) return;
-    setState(() {
-      _activeNotifier.value = item != null ? [item] : [];
-      _isLoading = false;
-    });
+  Future<void> _fetchInjectedTarget() async {
+    setState(() => _isFetchingInjected = true);
+    final item = await _service.fetchSingleItem(widget.fileId);
+    if (mounted) {
+      setState(() {
+        _injectedTarget = item;
+        _isFetchingInjected = false;
+      });
+    }
   }
 
-  Future<void> _fetchQueryGallery() async {
-    final searchState = widget.searchState!;
-    final controller = _queryController!;
-    final targetTitle = _normalizedTitle(widget.explicitFileId ?? '');
+  List<SearchItem> _getCombinedItems() {
+    final session = ref.watch(searchControllerProvider).activeSession;
+    final gallery = _isStandalone ? <SearchItem>[] : session.items;
 
-    var result = await _service.fetchPage(searchState, continueParams: null);
-    if (!mounted) return;
+    List<SearchItem> items = List.from(gallery);
 
-    if (result == null) {
-      await _fetchStandaloneAsset();
-      return;
-    }
-
-    var items = result.items;
-    controller.continueParams = result.continueParams;
-    controller.hasMore = result.continueParams != null;
-
-    int foundIndex =
-        items.indexWhere((it) => _normalizedTitle(it.title) == targetTitle);
-
-    int attempts = 0;
-    while (foundIndex == -1 && controller.hasMore && attempts < 4) {
-      final more = await _service.fetchPage(
-        searchState,
-        continueParams: controller.continueParams,
-      );
-      if (more == null) break;
-
-      final existingUrls = items.map((e) => e.url).toSet();
-      items = [
-        ...items,
-        ...more.items.where((it) => !existingUrls.contains(it.url)),
-      ];
-      controller.continueParams = more.continueParams;
-      controller.hasMore = more.continueParams != null;
-      foundIndex =
-          items.indexWhere((it) => _normalizedTitle(it.title) == targetTitle);
-      attempts++;
-    }
-
-    if (foundIndex == -1 && targetTitle.isNotEmpty) {
-      final single = await _service.fetchSingleItem(widget.explicitFileId!);
-      if (single != null) {
-        items = [single, ...items.where((it) => it.url != single.url)];
-        foundIndex = 0;
+    // Inject the deep-linked item if it's not already in the loaded gallery
+    if (_injectedTarget != null) {
+      if (!items.any((it) =>
+          _normalizedTitle(it.title) ==
+          _normalizedTitle(_injectedTarget!.title))) {
+        items.insert(0, _injectedTarget!);
       }
     }
-
-    if (!mounted) return;
-
-    final safeIndex = items.isEmpty ? 0 : foundIndex.clamp(0, items.length - 1);
-    setState(() {
-      _activeNotifier.value = items;
-      _currentIndex = safeIndex;
-      _isLoading = false;
-    });
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _pageController.hasClients) {
-        _suppressUrlSync = true;
-        _pageController.jumpToPage(safeIndex);
-      }
-    });
-  }
-
-  void _triggerLoadMore() {
-    switch (widget.mode) {
-      case _ViewerMode.gallery:
-        widget.onLoadMore?.call();
-        break;
-      case _ViewerMode.query:
-        _queryController?.loadMore(_activeNotifier);
-        break;
-      case _ViewerMode.standalone:
-        break;
-    }
+    return items;
   }
 
   @override
@@ -286,34 +164,17 @@ class _AssetViewerState extends State<AssetViewer> {
       return;
     }
 
-    if (index >= totalLength - 3) {
-      _triggerLoadMore();
+    if (!_isStandalone && index >= totalLength - 3) {
+      ref.read(searchControllerProvider.notifier).loadMore();
     }
 
-    if (_hasGallery) {
-      final currentItem = _activeNotifier.value[index];
-      final params = <String, String>{
-        'id': currentItem.title,
-        if (widget.searchState != null)
-          ...SearchUrlCodec.toQueryParams(widget.searchState!),
-      };
-
-      final notifier = _activeNotifier;
-      final queryController = _queryController;
-      final VoidCallback onLoadMore = widget.mode == _ViewerMode.gallery
-          ? widget.onLoadMore!
-          : () => queryController?.loadMore(notifier);
-
-      context.replace(
-        Uri(path: '/view', queryParameters: params).toString(),
-        extra: ViewerState(
-          notifier: notifier,
-          index: index,
-          onLoadMore: onLoadMore,
-          searchState: widget.searchState,
-          returnUrl: widget.returnUrl,
-        ),
-      );
+    // Sync URL without rebuilding the stack
+    final items = _getCombinedItems();
+    if (items.isNotEmpty) {
+      final params = Map<String, String>.from(
+          GoRouterState.of(context).uri.queryParameters);
+      params['id'] = items[index].title;
+      context.replace(Uri(path: '/view', queryParameters: params).toString());
     }
   }
 
@@ -336,210 +197,192 @@ class _AssetViewerState extends State<AssetViewer> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
+    final session = ref.watch(searchControllerProvider).activeSession;
+    final items = _getCombinedItems();
+
+    final isLoading = (_isStandalone && _isFetchingInjected) ||
+        (!_isStandalone && session.loading && items.isEmpty);
+
+    if (isLoading) {
       return const Scaffold(
         backgroundColor: Color(0xFF070707),
-        body: Center(
-          child: CircularProgressIndicator(color: Color(0xFF3D7EFF)),
+        body:
+            Center(child: CircularProgressIndicator(color: Color(0xFF3D7EFF))),
+      );
+    }
+
+    if (items.isEmpty) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF070707),
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.close, color: Colors.white),
+            onPressed: () => context.go(widget.returnUrl),
+          ),
+        ),
+        body: const Center(
+          child: Text('Media not found.',
+              style: TextStyle(color: Color(0xFF555555))),
         ),
       );
     }
 
-    return ValueListenableBuilder<List<SearchItem>>(
-      valueListenable: _activeNotifier,
-      builder: (context, results, child) {
-        if (_currentIndex >= results.length) {
-          _currentIndex = results.isNotEmpty ? results.length - 1 : 0;
-        }
+    // Failsafe bounds
+    if (_currentIndex >= items.length || _currentIndex < 0) {
+      _currentIndex = 0;
+    }
 
-        if (results.isEmpty) {
-          return Scaffold(
-            backgroundColor: const Color(0xFF070707),
-            appBar: AppBar(
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              leading: IconButton(
-                icon: const Icon(Icons.close, color: Colors.white),
-                onPressed: () {
-                  if (context.canPop()) {
-                    context.pop();
-                  } else {
-                    context.go(widget.returnUrl);
-                  }
-                },
-              ),
-            ),
-            body: const Center(
-              child: Text(
-                'Media not found or still loading.',
-                style: TextStyle(color: Color(0xFF555555)),
-              ),
-            ),
-          );
-        }
+    final currentItem = items[_currentIndex];
+    final hasPrevious = _currentIndex > 0;
+    final hasNext = _currentIndex < items.length - 1;
 
-        final currentItem = results[_currentIndex];
-        final hasPrevious = _currentIndex > 0;
-        final hasNext = _currentIndex < results.length - 1;
-
-        return Scaffold(
-          backgroundColor: const Color(0xFF070707),
-          appBar: AppBar(
-            backgroundColor: const Color(0xFF070707),
-            elevation: 0,
-            iconTheme: const IconThemeData(color: Colors.white),
-            leading: IconButton(
-              icon: const Icon(Icons.close, color: Colors.white),
-              onPressed: () {
-                if (context.canPop()) {
-                  context.pop();
-                } else {
-                  context.go(widget.returnUrl);
-                }
-              },
-            ),
-            title: Text(
-              _hasGallery
-                  ? '${_currentIndex + 1} OF ${results.length}'
-                  : 'DIRECT LINK',
-              style: const TextStyle(
-                color: Color(0xFF7A7A7A),
-                fontSize: 11,
-                letterSpacing: 2,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            centerTitle: true,
-            actions: [
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  if (MediaQuery.of(context).size.width < 800) {
-                    return IconButton(
-                      icon: Icon(
-                        _showMobileInfo ? Icons.info : Icons.info_outline,
-                        color: _showMobileInfo
-                            ? const Color(0xFF3D7EFF)
-                            : Colors.white,
-                      ),
-                      onPressed: () =>
-                          setState(() => _showMobileInfo = !_showMobileInfo),
-                    );
-                  }
-
-                  return const SizedBox.shrink();
-                },
-              ),
-              const SizedBox(width: 8),
-            ],
+    return Scaffold(
+      backgroundColor: const Color(0xFF070707),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF070707),
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+        leading: IconButton(
+          icon: const Icon(Icons.close, color: Colors.white),
+          onPressed: () => context.go(widget.returnUrl),
+        ),
+        title: Text(
+          !_isStandalone
+              ? '${_currentIndex + 1} OF ${items.length}'
+              : 'DIRECT LINK',
+          style: const TextStyle(
+            color: Color(0xFF7A7A7A),
+            fontSize: 11,
+            letterSpacing: 2,
+            fontWeight: FontWeight.w600,
           ),
-          body: GestureDetector(
-            onTap: () => _focusNode.requestFocus(),
-            child: KeyboardListener(
-              focusNode: _focusNode,
-              onKeyEvent: (KeyEvent event) {
-                if (event is KeyDownEvent) {
-                  if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
-                    _navigateToPage(_currentIndex - 1, results.length);
-                  } else if (event.logicalKey ==
-                      LogicalKeyboardKey.arrowRight) {
-                    _navigateToPage(_currentIndex + 1, results.length);
-                  }
-                }
-              },
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final isDesktop = constraints.maxWidth >= 800;
+        ),
+        centerTitle: true,
+        actions: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              if (MediaQuery.of(context).size.width < 800) {
+                return IconButton(
+                  icon: Icon(
+                    _showMobileInfo ? Icons.info : Icons.info_outline,
+                    color: _showMobileInfo
+                        ? const Color(0xFF3D7EFF)
+                        : Colors.white,
+                  ),
+                  onPressed: () =>
+                      setState(() => _showMobileInfo = !_showMobileInfo),
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: GestureDetector(
+        onTap: () => _focusNode.requestFocus(),
+        child: KeyboardListener(
+          focusNode: _focusNode,
+          onKeyEvent: (KeyEvent event) {
+            if (event is KeyDownEvent) {
+              if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+                _navigateToPage(_currentIndex - 1, items.length);
+              } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+                _navigateToPage(_currentIndex + 1, items.length);
+              }
+            }
+          },
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final isDesktop = constraints.maxWidth >= 800;
 
-                  return Row(
-                    children: [
-                      Expanded(
-                        flex: 7,
-                        child: Stack(
-                          children: [
-                            PageView.builder(
-                              controller: _pageController,
-                              physics: _hasGallery
-                                  ? const BouncingScrollPhysics()
-                                  : const NeverScrollableScrollPhysics(),
-                              itemCount: results.length,
-                              onPageChanged: (index) =>
-                                  _onPageChanged(index, results.length),
-                              itemBuilder: (context, index) {
-                                return _NativeMediaRenderer(
-                                    item: results[index]);
-                              },
+              return Row(
+                children: [
+                  Expanded(
+                    flex: 7,
+                    child: Stack(
+                      children: [
+                        PageView.builder(
+                          controller: _pageController,
+                          physics: !_isStandalone
+                              ? const BouncingScrollPhysics()
+                              : const NeverScrollableScrollPhysics(),
+                          itemCount: items.length,
+                          onPageChanged: (index) =>
+                              _onPageChanged(index, items.length),
+                          itemBuilder: (context, index) {
+                            return _NativeMediaRenderer(item: items[index]);
+                          },
+                        ),
+                        if (hasPrevious && isDesktop && !_isStandalone)
+                          Positioned(
+                            left: 24,
+                            top: 0,
+                            bottom: 0,
+                            child: _NavigationButton(
+                              icon: Icons.arrow_back_ios_new,
+                              onTap: () => _navigateToPage(
+                                  _currentIndex - 1, items.length),
                             ),
-                            if (hasPrevious && isDesktop && _hasGallery)
-                              Positioned(
-                                left: 24,
-                                top: 0,
-                                bottom: 0,
-                                child: _NavigationButton(
-                                  icon: Icons.arrow_back_ios_new,
-                                  onTap: () => _navigateToPage(
-                                      _currentIndex - 1, results.length),
-                                ),
+                          ),
+                        if (hasNext && isDesktop && !_isStandalone)
+                          Positioned(
+                            right: 24,
+                            top: 0,
+                            bottom: 0,
+                            child: _NavigationButton(
+                              icon: Icons.arrow_forward_ios,
+                              onTap: () => _navigateToPage(
+                                  _currentIndex + 1, items.length),
+                            ),
+                          ),
+                        if (!isDesktop && _showMobileInfo)
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: Container(
+                              constraints: BoxConstraints(
+                                  maxHeight: constraints.maxHeight * 0.6),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF111111),
+                                borderRadius: BorderRadius.vertical(
+                                    top: Radius.circular(16)),
+                                border: Border(
+                                    top: BorderSide(color: Color(0xFF222222))),
                               ),
-                            if (hasNext && isDesktop && _hasGallery)
-                              Positioned(
-                                right: 24,
-                                top: 0,
-                                bottom: 0,
-                                child: _NavigationButton(
-                                  icon: Icons.arrow_forward_ios,
-                                  onTap: () => _navigateToPage(
-                                      _currentIndex + 1, results.length),
-                                ),
+                              child: _MetadataInspector(
+                                item: currentItem,
+                                onLaunchCommons: () =>
+                                    _launchCommonsUrl(currentItem.commonsUrl),
                               ),
-                            if (!isDesktop && _showMobileInfo)
-                              Positioned(
-                                left: 0,
-                                right: 0,
-                                bottom: 0,
-                                child: Container(
-                                  constraints: BoxConstraints(
-                                    maxHeight: constraints.maxHeight * 0.6,
-                                  ),
-                                  decoration: const BoxDecoration(
-                                    color: Color(0xFF111111),
-                                    borderRadius: BorderRadius.vertical(
-                                        top: Radius.circular(16)),
-                                    border: Border(
-                                        top: BorderSide(
-                                            color: Color(0xFF222222))),
-                                  ),
-                                  child: _MetadataInspector(
-                                    item: currentItem,
-                                    onLaunchCommons: () => _launchCommonsUrl(
-                                        currentItem.commonsUrl),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (isDesktop)
+                    Container(
+                      width: 380,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF111111),
+                        border:
+                            Border(left: BorderSide(color: Color(0xFF1E1E1E))),
                       ),
-                      if (isDesktop)
-                        Container(
-                          width: 380,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF111111),
-                            border: Border(
-                                left: BorderSide(color: Color(0xFF1E1E1E))),
-                          ),
-                          child: _MetadataInspector(
-                            item: currentItem,
-                            onLaunchCommons: () =>
-                                _launchCommonsUrl(currentItem.commonsUrl),
-                          ),
-                        ),
-                    ],
-                  );
-                },
-              ),
-            ),
+                      child: _MetadataInspector(
+                        item: currentItem,
+                        onLaunchCommons: () =>
+                            _launchCommonsUrl(currentItem.commonsUrl),
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
