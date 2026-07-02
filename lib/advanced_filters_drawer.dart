@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -195,6 +196,12 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
                     fieldViewBuilder:
                         (context, controller, focusNode, onEditingComplete) {
                       return TextField(
+                        keyboardType: (kIsWeb &&
+                                (defaultTargetPlatform == TargetPlatform.iOS ||
+                                    defaultTargetPlatform ==
+                                        TargetPlatform.android))
+                            ? TextInputType.text
+                            : TextInputType.url,
                         controller: controller,
                         focusNode: focusNode,
                         style: const TextStyle(color: Colors.white),
@@ -333,6 +340,12 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
                     fieldViewBuilder:
                         (context, controller, focusNode, onEditingComplete) {
                       return TextField(
+                        keyboardType: (kIsWeb &&
+                                (defaultTargetPlatform == TargetPlatform.iOS ||
+                                    defaultTargetPlatform ==
+                                        TargetPlatform.android))
+                            ? TextInputType.text
+                            : TextInputType.url,
                         controller: controller,
                         focusNode: focusNode,
                         style: const TextStyle(color: Colors.white),
@@ -397,6 +410,13 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
                     children: [
                       Expanded(
                         child: TextField(
+                          keyboardType: (kIsWeb &&
+                                  (defaultTargetPlatform ==
+                                          TargetPlatform.iOS ||
+                                      defaultTargetPlatform ==
+                                          TargetPlatform.android))
+                              ? TextInputType.text
+                              : TextInputType.url,
                           controller: _langCtrl,
                           style: const TextStyle(color: Colors.white),
                           decoration: _inputDecoration()
@@ -406,6 +426,13 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: TextField(
+                          keyboardType: (kIsWeb &&
+                                  (defaultTargetPlatform ==
+                                          TargetPlatform.iOS ||
+                                      defaultTargetPlatform ==
+                                          TargetPlatform.android))
+                              ? TextInputType.text
+                              : TextInputType.url,
                           controller: _modelCtrl,
                           style: const TextStyle(color: Colors.white),
                           decoration: _inputDecoration()
@@ -421,6 +448,13 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
                     children: [
                       Expanded(
                         child: TextField(
+                          keyboardType: (kIsWeb &&
+                                  (defaultTargetPlatform ==
+                                          TargetPlatform.iOS ||
+                                      defaultTargetPlatform ==
+                                          TargetPlatform.android))
+                              ? TextInputType.text
+                              : TextInputType.url,
                           controller: _createdFromCtrl,
                           style: const TextStyle(color: Colors.white),
                           decoration:
@@ -430,6 +464,13 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: TextField(
+                          keyboardType: (kIsWeb &&
+                                  (defaultTargetPlatform ==
+                                          TargetPlatform.iOS ||
+                                      defaultTargetPlatform ==
+                                          TargetPlatform.android))
+                              ? TextInputType.text
+                              : TextInputType.url,
                           controller: _createdToCtrl,
                           style: const TextStyle(color: Colors.white),
                           decoration:
@@ -445,6 +486,13 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
                     children: [
                       Expanded(
                         child: TextField(
+                          keyboardType: (kIsWeb &&
+                                  (defaultTargetPlatform ==
+                                          TargetPlatform.iOS ||
+                                      defaultTargetPlatform ==
+                                          TargetPlatform.android))
+                              ? TextInputType.text
+                              : TextInputType.url,
                           controller: _editedFromCtrl,
                           style: const TextStyle(color: Colors.white),
                           decoration:
@@ -454,6 +502,13 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: TextField(
+                          keyboardType: (kIsWeb &&
+                                  (defaultTargetPlatform ==
+                                          TargetPlatform.iOS ||
+                                      defaultTargetPlatform ==
+                                          TargetPlatform.android))
+                              ? TextInputType.text
+                              : TextInputType.url,
                           controller: _editedToCtrl,
                           style: const TextStyle(color: Colors.white),
                           decoration:
@@ -501,6 +556,13 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
                     children: [
                       Expanded(
                         child: TextField(
+                          keyboardType: (kIsWeb &&
+                                  (defaultTargetPlatform ==
+                                          TargetPlatform.iOS ||
+                                      defaultTargetPlatform ==
+                                          TargetPlatform.android))
+                              ? TextInputType.text
+                              : TextInputType.url,
                           controller: _latCtrl,
                           style: const TextStyle(color: Colors.white),
                           decoration:
@@ -510,6 +572,13 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: TextField(
+                          keyboardType: (kIsWeb &&
+                                  (defaultTargetPlatform ==
+                                          TargetPlatform.iOS ||
+                                      defaultTargetPlatform ==
+                                          TargetPlatform.android))
+                              ? TextInputType.text
+                              : TextInputType.url,
                           controller: _lngCtrl,
                           style: const TextStyle(color: Colors.white),
                           decoration:

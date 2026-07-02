@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-
+import 'package:flutter/foundation.dart';
 import 'search_models.dart';
 import 'search_url_codec.dart';
 
@@ -77,7 +77,11 @@ class _SearchTopBarState extends State<SearchTopBar> {
               child: SizedBox(
                 height: 38,
                 child: TextField(
-                  keyboardType: TextInputType.url,
+                  keyboardType: (kIsWeb &&
+                          (defaultTargetPlatform == TargetPlatform.iOS ||
+                              defaultTargetPlatform == TargetPlatform.android))
+                      ? TextInputType.text
+                      : TextInputType.url,
                   textInputAction: TextInputAction.search,
                   autocorrect: false,
                   enableSuggestions: false,

@@ -24,7 +24,7 @@ class WikiSearchApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp.router(
       routerConfig: appRouter, // <-- The router completely replaces 'home'
-      title: 'Wiki Media Search',
+      title: 'Commons Lens',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
