@@ -33,6 +33,7 @@ class AssetViewer extends StatefulWidget {
 
   final String? explicitFileId;
   final SearchState? searchState;
+  final String returnUrl;
   final _ViewerMode mode;
 
   const AssetViewer({
@@ -40,6 +41,7 @@ class AssetViewer extends StatefulWidget {
     required this.searchResultsNotifier,
     required this.initialIndex,
     required this.onLoadMore,
+    required this.returnUrl,
     this.explicitFileId,
     this.searchState,
   })  : mode = _ViewerMode.gallery,
@@ -48,6 +50,7 @@ class AssetViewer extends StatefulWidget {
   const AssetViewer.standalone({
     Key? key,
     required String fileId,
+    required this.returnUrl,
   })  : searchResultsNotifier = null,
         initialIndex = 0,
         onLoadMore = null,
@@ -60,6 +63,7 @@ class AssetViewer extends StatefulWidget {
     Key? key,
     required String fileId,
     required SearchState searchState,
+    required this.returnUrl,
   })  : searchResultsNotifier = null,
         initialIndex = 0,
         onLoadMore = null,
@@ -170,7 +174,6 @@ class _AssetViewerState extends State<AssetViewer> {
         _suppressUrlSync = false;
         return;
       }
-
       _pageController.jumpToPage(newIndex);
       setState(() {});
     });
@@ -289,7 +292,7 @@ class _AssetViewerState extends State<AssetViewer> {
 
     if (_hasGallery) {
       final currentItem = _activeNotifier.value[index];
-      final params = {
+      final params = <String, String>{
         'id': currentItem.title,
         if (widget.searchState != null)
           ...SearchUrlCodec.toQueryParams(widget.searchState!),
@@ -308,6 +311,7 @@ class _AssetViewerState extends State<AssetViewer> {
           index: index,
           onLoadMore: onLoadMore,
           searchState: widget.searchState,
+          returnUrl: widget.returnUrl,
         ),
       );
     }
@@ -356,8 +360,13 @@ class _AssetViewerState extends State<AssetViewer> {
               elevation: 0,
               leading: IconButton(
                 icon: const Icon(Icons.close, color: Colors.white),
-                onPressed: () =>
-                    context.canPop() ? context.pop() : context.go('/'),
+                onPressed: () {
+                  if (context.canPop()) {
+                    context.pop();
+                  } else {
+                    context.go(widget.returnUrl);
+                  }
+                },
               ),
             ),
             body: const Center(
@@ -385,12 +394,14 @@ class _AssetViewerState extends State<AssetViewer> {
                 if (context.canPop()) {
                   context.pop();
                 } else {
-                  context.go('/');
+                  context.go(widget.returnUrl);
                 }
               },
             ),
             title: Text(
-              _hasGallery ? '${_currentIndex + 1} OF ${results.length}' : 'DIRECT LINK',
+              _hasGallery
+                  ? '${_currentIndex + 1} OF ${results.length}'
+                  : 'DIRECT LINK',
               style: const TextStyle(
                 color: Color(0xFF7A7A7A),
                 fontSize: 11,
@@ -414,6 +425,7 @@ class _AssetViewerState extends State<AssetViewer> {
                           setState(() => _showMobileInfo = !_showMobileInfo),
                     );
                   }
+
                   return const SizedBox.shrink();
                 },
               ),
@@ -453,7 +465,8 @@ class _AssetViewerState extends State<AssetViewer> {
                               onPageChanged: (index) =>
                                   _onPageChanged(index, results.length),
                               itemBuilder: (context, index) {
-                                return _NativeMediaRenderer(item: results[index]);
+                                return _NativeMediaRenderer(
+                                    item: results[index]);
                               },
                             ),
                             if (hasPrevious && isDesktop && _hasGallery)
@@ -464,9 +477,7 @@ class _AssetViewerState extends State<AssetViewer> {
                                 child: _NavigationButton(
                                   icon: Icons.arrow_back_ios_new,
                                   onTap: () => _navigateToPage(
-                                    _currentIndex - 1,
-                                    results.length,
-                                  ),
+                                      _currentIndex - 1, results.length),
                                 ),
                               ),
                             if (hasNext && isDesktop && _hasGallery)
@@ -477,9 +488,7 @@ class _AssetViewerState extends State<AssetViewer> {
                                 child: _NavigationButton(
                                   icon: Icons.arrow_forward_ios,
                                   onTap: () => _navigateToPage(
-                                    _currentIndex + 1,
-                                    results.length,
-                                  ),
+                                      _currentIndex + 1, results.length),
                                 ),
                               ),
                             if (!isDesktop && _showMobileInfo)
@@ -494,17 +503,15 @@ class _AssetViewerState extends State<AssetViewer> {
                                   decoration: const BoxDecoration(
                                     color: Color(0xFF111111),
                                     borderRadius: BorderRadius.vertical(
-                                      top: Radius.circular(16),
-                                    ),
+                                        top: Radius.circular(16)),
                                     border: Border(
-                                      top: BorderSide(color: Color(0xFF222222)),
-                                    ),
+                                        top: BorderSide(
+                                            color: Color(0xFF222222))),
                                   ),
                                   child: _MetadataInspector(
                                     item: currentItem,
                                     onLaunchCommons: () => _launchCommonsUrl(
-                                      currentItem.commonsUrl,
-                                    ),
+                                        currentItem.commonsUrl),
                                   ),
                                 ),
                               ),
@@ -517,8 +524,7 @@ class _AssetViewerState extends State<AssetViewer> {
                           decoration: const BoxDecoration(
                             color: Color(0xFF111111),
                             border: Border(
-                              left: BorderSide(color: Color(0xFF1E1E1E)),
-                            ),
+                                left: BorderSide(color: Color(0xFF1E1E1E))),
                           ),
                           child: _MetadataInspector(
                             item: currentItem,
@@ -731,15 +737,16 @@ class _MetadataInspector extends StatelessWidget {
 
   String _cleanHtml(String html) {
     if (html.isEmpty) return '';
-    final exp = RegExp(r"<[^>]*>", multiLine: true, caseSensitive: true);
+    final exp = RegExp(r'<[^>]*>', multiLine: true, caseSensitive: true);
     return html.replaceAll(exp, '').trim();
   }
 
   @override
   Widget build(BuildContext context) {
     final cleanArtist = _cleanHtml(item.artistHtml);
-    final dimensions =
-        (item.width > 0 && item.height > 0) ? '${item.width} × ${item.height} px' : '';
+    final dimensions = (item.width > 0 && item.height > 0)
+        ? '${item.width} × ${item.height} px'
+        : '';
 
     return ListView(
       padding: const EdgeInsets.all(24),
@@ -766,7 +773,12 @@ class _MetadataInspector extends StatelessWidget {
         _buildPropertyRow('DATE ORIGINAL', item.dateTimeOriginal),
         _buildPropertyRow('UPLOADER', item.uploader),
         _buildPropertyRow('UPLOAD TIMESTAMP', item.timestamp ?? ''),
-        _buildPropertyRow('LICENSE', _cleanHtml(item.licenseShortName)),
+        _buildLicenseRow(
+          context,
+          'LICENSE',
+          _cleanHtml(item.licenseShortName),
+          item.licenseUrl,
+        ),
         const SizedBox(height: 24),
         const Divider(color: Color(0xFF222222)),
         const SizedBox(height: 24),
@@ -791,6 +803,65 @@ class _MetadataInspector extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildLicenseRow(
+    BuildContext context,
+    String label,
+    String value,
+    String? url,
+  ) {
+    if (value.isEmpty) return const SizedBox.shrink();
+
+    final cleanUrl = (url ?? '').trim();
+    final isClickable = cleanUrl.isNotEmpty;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF666666),
+              fontSize: 10,
+              letterSpacing: 1.5,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          if (isClickable)
+            InkWell(
+              onTap: () async {
+                final uri = Uri.tryParse(cleanUrl);
+                if (uri != null && await canLaunchUrl(uri)) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                }
+              },
+              child: Text(
+                value,
+                style: const TextStyle(
+                  color: Color(0xFF7AABFF),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  decoration: TextDecoration.underline,
+                  decorationColor: Color(0xFF7AABFF),
+                ),
+              ),
+            )
+          else
+            SelectableText(
+              value,
+              style: const TextStyle(
+                color: Color(0xFFE0E0E0),
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+        ],
+      ),
     );
   }
 

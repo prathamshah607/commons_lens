@@ -4,7 +4,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
+//import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
 import 'router.dart';
 import 'search_models.dart';
@@ -43,7 +43,7 @@ class _SearchPageState extends State<SearchPage> {
 
   bool _showQueryPreview = false;
   int _searchGeneration = 0;
-  
+
   // NEW: Flag to ensure URL hydration only happens once on boot
   bool _urlHydrated = false;
 
@@ -98,17 +98,18 @@ class _SearchPageState extends State<SearchPage> {
   // Silently updates the address bar whenever state changes, so every
   // unique query + filter combination gets its own unique, shareable URL.
   void _syncUrl() {
-  final currentUri = GoRouterState.of(context).uri;
-  if (currentUri.path != '/') return;
+    final currentUri = GoRouterState.of(context).uri;
+    if (currentUri.path != '/') return;
 
-  final params = SearchUrlCodec.toQueryParams(_state);
-  final newUrl =
-      Uri(path: '/', queryParameters: params.isEmpty ? null : params).toString();
+    final params = SearchUrlCodec.toQueryParams(_state);
+    final newUrl =
+        Uri(path: '/', queryParameters: params.isEmpty ? null : params)
+            .toString();
 
-  if (currentUri.toString() != newUrl) {
-    context.replace(newUrl);
+    if (currentUri.toString() != newUrl) {
+      context.replace(newUrl);
+    }
   }
-}
 
   @override
   void dispose() {
@@ -325,7 +326,7 @@ class _SearchPageState extends State<SearchPage> {
       _state = nextState;
       _lastBuiltQuery = _service.buildQuery(_state);
     });
-    
+
     // Sync state to the browser address bar
     _syncUrl();
 
@@ -358,7 +359,7 @@ class _SearchPageState extends State<SearchPage> {
       _state = _state.copyWith(formats: next);
       _lastBuiltQuery = _service.buildQuery(_state);
     });
-    
+
     _syncUrl();
 
     if (_state.queryText.trim().isNotEmpty) {
@@ -649,7 +650,7 @@ class _SearchPageState extends State<SearchPage> {
                               );
                               _lastBuiltQuery = _service.buildQuery(_state);
                             });
-                            
+
                             _syncUrl();
 
                             Navigator.of(context).pop();
@@ -1528,13 +1529,12 @@ class _MediaCard extends StatefulWidget {
 class _MediaCardState extends State<_MediaCard> {
   bool _hovered = false;
 
-  Future<void> _openCommons() async {
-    final url = Uri.parse(widget.item.commonsUrl);
-    await launchUrl(url, mode: LaunchMode.platformDefault);
-  }
+  //Future<void> _openCommons() async {
+  //  final url = Uri.parse(widget.item.commonsUrl);
+  //  await launchUrl(url, mode: LaunchMode.platformDefault);
+  //}
 
   Future<void> _handleTap() async {
-
     // Embed the full search context (query + every active filter) into the
     // URL alongside the file id, so this exact URL — pasted fresh, or
     // reached via back/forward after a reload — reconstructs the same
@@ -1543,6 +1543,8 @@ class _MediaCardState extends State<_MediaCard> {
       'id': widget.item.title,
       ...SearchUrlCodec.toQueryParams(widget.searchState),
     };
+
+    final searchUrl = GoRouterState.of(context).uri.toString();
     final uniqueUrl = Uri(path: '/view', queryParameters: params).toString();
 
     print('pushing $uniqueUrl');
@@ -1554,6 +1556,7 @@ class _MediaCardState extends State<_MediaCard> {
         index: widget.index,
         onLoadMore: widget.onLoadMore,
         searchState: widget.searchState,
+        returnUrl: searchUrl,
       ),
     );
   }
