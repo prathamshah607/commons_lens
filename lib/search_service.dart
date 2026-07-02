@@ -13,6 +13,27 @@ class SearchService {
   // Prevents recompiling the pattern 30+ times per network response.
   static final RegExp _htmlTagRegex = RegExp(r'<[^>]*>');
 
+  // --- LICENSE / QUALITY CLAUSE TABLES ---
+  // Hardcoded, not a general QID:text DB — Commons only really uses a
+  // handful of standard licenses, so this is a fixed, small lookup, unlike
+  // "depicts" which needs arbitrary entity resolution (see
+  // searchDepictsEntities below). Every clause here was verified against the
+  // live API — counts recorded alongside for reference.
+  //
+  // NOTE: publicDomain uses copyright-status (P6216), everything else uses
+  // license (P275) — these are different SDC properties.
+  static const Map<LicensePreset, String> _licenseClauses = {
+    LicensePreset.cc0: 'haswbstatement:P275=Q6938433', // ~9.9M hits
+    LicensePreset.ccBy4: 'haswbstatement:P275=Q20007257', // ~7.6M hits
+    LicensePreset.ccBySa4: 'haswbstatement:P275=Q18199165', // ~34.5M hits
+    LicensePreset.publicDomain: 'haswbstatement:P6216=Q88088423', // ~12.3M hits
+  };
+
+  static const Map<QualityFilter, String> _qualityClauses = {
+    QualityFilter.qualityImage: 'hastemplate:"Quality image"', // ~444.6k hits
+    QualityFilter.valuedImage: 'hastemplate:"Valued image"', // ~55.6k hits
+  };
+
   // --- NEW: STANDALONE DIRECT FETCH ---
   // Fetches a single specific piece of media by its exact title for deep linking.
   Future<SearchItem?> fetchSingleItem(String filename) async {
@@ -99,6 +120,76 @@ class SearchService {
       );
     } catch (_) {
       return null;
+    }
+  }
+
+  // --- DEPICTS AUTOCOMPLETE (live, no local QID:label DB) ---
+  // Hits Wikidata's wbsearchentities directly — the same endpoint the
+  // official Wikidata/Commons entity-suggester widgets use. Call this
+  // on-the-fly as the user types (debounce in the UI layer), then feed the
+  // chosen DepictsEntity into SearchState.depicts.
+  Future<List<DepictsEntity>> searchDepictsEntities(
+    String text, {
+    int limit = 8,
+    String language = 'en',
+  }) async {
+    final query = text.trim();
+    if (query.isEmpty) return [];
+
+    try {
+      final params = <String, String>{
+        'action': 'wbsearchentities',
+        'search': query,
+        'language': language,
+        'uselang': language,
+        'type': 'item',
+        'limit': '$limit',
+        'format': 'json',
+        'origin': '*',
+      };
+
+      final uri = Uri.https('www.wikidata.org', '/w/api.php', params);
+
+      final response = await _client.get(uri, headers: {
+        'Api-User-Agent': 'CommonslensApp/1.0 (Flutter Web)',
+      }).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode != 200) return [];
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final results = data['search'] as List? ?? [];
+
+      return results.map((r) {
+        final map = r as Map<String, dynamic>;
+        return DepictsEntity(
+          qid: map['id'] as String? ?? '',
+          label: map['label'] as String? ?? (map['id'] as String? ?? ''),
+          description: map['description'] as String?,
+        );
+      }).where((e) => e.qid.isNotEmpty).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // --- CATEGORY AUTOCOMPLETE ---
+  Future<List<String>> searchCategories(String query) async {
+    final clean = query.trim();
+    if (clean.isEmpty) return [];
+    try {
+      final uri = Uri.https('commons.wikimedia.org', '/w/api.php', {
+        'action': 'query',
+        'list': 'allcategories',
+        'acprefix': clean,
+        'format': 'json',
+        'origin': '*',
+      });
+      final res = await _client.get(uri).timeout(const Duration(seconds: 5));
+      final data = jsonDecode(res.body);
+      final cats = data['query']['allcategories'] as List? ?? [];
+      return cats.map((c) => c['*'] as String).toList();
+    } catch (_) {
+      return [];
     }
   }
 
@@ -218,6 +309,80 @@ class SearchService {
       }
     }
 
+    // License (structured-data statement — see _licenseClauses)
+    if (state.licensePreset != LicensePreset.any) {
+      final clause = _licenseClauses[state.licensePreset];
+      if (clause != null) {
+        parts.add(clause);
+        chips.add(QueryChipData(
+          id: 'license',
+          label: licensePresetLabel(state.licensePreset),
+        ));
+      }
+    }
+
+    // Curation tier (hastemplate: — see _qualityClauses)
+    if (state.qualityFilter != QualityFilter.any) {
+      final clause = _qualityClauses[state.qualityFilter];
+      if (clause != null) {
+        parts.add(clause);
+        chips.add(QueryChipData(
+          id: 'quality',
+          label: qualityFilterLabel(state.qualityFilter),
+        ));
+      }
+    }
+
+    // Minimum resolution (filew: / fileh: — confirmed working)
+    if (state.minWidth != null && state.minWidth! > 0) {
+      parts.add('filew:>${state.minWidth}');
+      chips.add(QueryChipData(
+        id: 'minWidth',
+        label: 'Width ≥ ${state.minWidth}px',
+      ));
+    }
+    if (state.minHeight != null && state.minHeight! > 0) {
+      parts.add('fileh:>${state.minHeight}');
+      chips.add(QueryChipData(
+        id: 'minHeight',
+        label: 'Height ≥ ${state.minHeight}px',
+      ));
+    }
+
+    // Depicts (structured-data P180 statement) — QID resolved live via
+    // Wikidata's wbsearchentities, never stored locally. See
+    // searchDepictsEntities.
+    if (state.depicts != null) {
+      final entity = state.depicts!;
+      parts.add('haswbstatement:P180=${entity.qid}');
+      chips.add(QueryChipData(
+        id: 'depicts',
+        label: 'Depicts: ${entity.label}',
+      ));
+    }
+
+    // Geosearch (nearcoord: — confirmed working directly, no SDC needed)
+    if (state.nearCoord != null) {
+      final coord = state.nearCoord!;
+      final radius = coord.radiusKm.toStringAsFixed(0);
+      parts.add('nearcoord:${radius}km,${coord.lat},${coord.lng}');
+      chips.add(QueryChipData(
+        id: 'nearCoord',
+        label: 'Near ${coord.lat.toStringAsFixed(3)}, '
+            '${coord.lng.toStringAsFixed(3)} (${radius}km)',
+      ));
+    }
+
+    // Free-text exclusion terms (plain CirrusSearch "-term" syntax)
+    for (final term in state.excludeTerms.toList()..sort()) {
+      final safe = term.trim();
+      if (safe.isEmpty) continue;
+      final needsQuotes = safe.contains(' ');
+      final token = needsQuotes ? '"$safe"' : safe;
+      parts.add('-$token');
+      chips.add(QueryChipData(id: 'exclude:$safe', label: 'Exclude: $safe'));
+    }
+
     final srsearch = parts.join(' ').trim();
 
     return QueryBuildResult(
@@ -246,6 +411,13 @@ class SearchService {
       'editedFrom=${state.editedDate?.from ?? ""}',
       'editedTo=${state.editedDate?.to ?? ""}',
       'sort=${state.sortMode.name}',
+      'license=${state.licensePreset.name}',
+      'quality=${state.qualityFilter.name}',
+      'minW=${state.minWidth ?? ""}',
+      'minH=${state.minHeight ?? ""}',
+      'depicts=${state.depicts?.qid ?? ""}',
+      'near=${state.nearCoord != null ? "${state.nearCoord!.lat},${state.nearCoord!.lng},${state.nearCoord!.radiusKm}" : ""}',
+      'exclude=${(state.excludeTerms.toList()..sort()).join(",")}',
     ].join('|');
   }
 

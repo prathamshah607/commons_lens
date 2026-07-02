@@ -36,6 +36,53 @@ enum SortMode {
   titleMatch,
 }
 
+// License, expressed as structured-data (SDC) statements on Commons.
+// Confirmed against the live API — see commons_filter_probe.py results.
+// NOTE: publicDomain uses copyright-status (P6216), not license (P275) —
+// public domain works aren't "licensed" in the SDC model, they're marked
+// as having no copyright restriction.
+enum LicensePreset {
+  any,
+  cc0,
+  ccBy4,
+  ccBySa4,
+  publicDomain,
+}
+
+String licensePresetLabel(LicensePreset preset) {
+  switch (preset) {
+    case LicensePreset.any:
+      return 'Any license';
+    case LicensePreset.cc0:
+      return 'CC0';
+    case LicensePreset.ccBy4:
+      return 'CC BY 4.0';
+    case LicensePreset.ccBySa4:
+      return 'CC BY-SA 4.0';
+    case LicensePreset.publicDomain:
+      return 'Public domain';
+  }
+}
+
+// Curation/assessment tier, via hastemplate:. "Featured picture" is
+// deliberately excluded — probed as 0 hits, real template name unconfirmed.
+enum QualityFilter {
+  any,
+  qualityImage,
+  valuedImage,
+}
+
+String qualityFilterLabel(QualityFilter filter) {
+  switch (filter) {
+    case QualityFilter.any:
+      return 'Any quality';
+    case QualityFilter.qualityImage:
+      return 'Quality images';
+    case QualityFilter.valuedImage:
+      return 'Valued images';
+  }
+}
+
 enum MediaKind {
   image,
   vector,
@@ -68,6 +115,49 @@ class DateFilter {
   }
 }
 
+// Geosearch filter — maps directly to CirrusSearch's nearcoord: keyword.
+// Confirmed working against Commons (326k hits within 10km of Paris in probe).
+class NearCoordFilter {
+  final double lat;
+  final double lng;
+  final double radiusKm;
+
+  const NearCoordFilter({
+    required this.lat,
+    required this.lng,
+    this.radiusKm = 10,
+  });
+
+  NearCoordFilter copyWith({double? lat, double? lng, double? radiusKm}) {
+    return NearCoordFilter(
+      lat: lat ?? this.lat,
+      lng: lng ?? this.lng,
+      radiusKm: radiusKm ?? this.radiusKm,
+    );
+  }
+}
+
+// A single Wikidata entity, resolved live via wbsearchentities — never
+// stored locally as a lookup table. See SearchService.searchDepictsEntities.
+class DepictsEntity {
+  final String qid;
+  final String label;
+  final String? description;
+
+  const DepictsEntity({
+    required this.qid,
+    required this.label,
+    this.description,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is DepictsEntity && other.qid == qid;
+
+  @override
+  int get hashCode => qid.hashCode;
+}
+
 class SearchState {
   final String queryText;
   final MediaTabType tab;
@@ -81,6 +171,13 @@ class SearchState {
   final DateFilter? createdDate;
   final DateFilter? editedDate;
   final SortMode sortMode;
+  final LicensePreset licensePreset;
+  final QualityFilter qualityFilter;
+  final int? minWidth;
+  final int? minHeight;
+  final DepictsEntity? depicts;
+  final NearCoordFilter? nearCoord;
+  final Set<String> excludeTerms;
 
   const SearchState({
     this.queryText = '',
@@ -95,6 +192,13 @@ class SearchState {
     this.createdDate,
     this.editedDate,
     this.sortMode = SortMode.relevance,
+    this.licensePreset = LicensePreset.any,
+    this.qualityFilter = QualityFilter.any,
+    this.minWidth,
+    this.minHeight,
+    this.depicts,
+    this.nearCoord,
+    this.excludeTerms = const {},
   });
 
   SearchState copyWith({
@@ -110,10 +214,21 @@ class SearchState {
     DateFilter? createdDate,
     DateFilter? editedDate,
     SortMode? sortMode,
+    LicensePreset? licensePreset,
+    QualityFilter? qualityFilter,
+    int? minWidth,
+    int? minHeight,
+    DepictsEntity? depicts,
+    NearCoordFilter? nearCoord,
+    Set<String>? excludeTerms,
     bool clearLanguageCode = false,
     bool clearContentModel = false,
     bool clearCreatedDate = false,
     bool clearEditedDate = false,
+    bool clearMinWidth = false,
+    bool clearMinHeight = false,
+    bool clearDepicts = false,
+    bool clearNearCoord = false,
   }) {
     return SearchState(
       queryText: queryText ?? this.queryText,
@@ -132,6 +247,13 @@ class SearchState {
       editedDate:
           clearEditedDate ? null : (editedDate ?? this.editedDate),
       sortMode: sortMode ?? this.sortMode,
+      licensePreset: licensePreset ?? this.licensePreset,
+      qualityFilter: qualityFilter ?? this.qualityFilter,
+      minWidth: clearMinWidth ? null : (minWidth ?? this.minWidth),
+      minHeight: clearMinHeight ? null : (minHeight ?? this.minHeight),
+      depicts: clearDepicts ? null : (depicts ?? this.depicts),
+      nearCoord: clearNearCoord ? null : (nearCoord ?? this.nearCoord),
+      excludeTerms: excludeTerms ?? this.excludeTerms,
     );
   }
 }

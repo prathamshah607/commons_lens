@@ -530,7 +530,7 @@ class _NativeMediaRendererState extends State<_NativeMediaRenderer> {
         BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: Container(
-            color: Colors.black.withOpacity(0.65),
+            color: Colors.black.withValues(alpha: 0.65),
           ),
         ),
         Center(
@@ -920,12 +920,12 @@ class _NavigationButtonState extends State<_NavigationButton> {
           height: 48,
           decoration: BoxDecoration(
             color: _isHovered
-                ? Colors.white.withOpacity(0.15)
-                : Colors.black.withOpacity(0.4),
+                ? Colors.white.withValues(alpha: 0.15)
+                : Colors.black.withValues(alpha: 0.4),
             shape: BoxShape.circle,
             border: Border.all(
               color: _isHovered
-                  ? Colors.white.withOpacity(0.3)
+                  ? Colors.white.withValues(alpha: 0.3)
                   : Colors.transparent,
             ),
           ),

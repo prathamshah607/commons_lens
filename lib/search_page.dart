@@ -1,5 +1,5 @@
-// ignore_for_file: deprecated_member_use
-import 'dart:async';
+// ignore_for_file: deprecated_member_use, curly_braces_in_flow_control_structures
+import 'package:commonslens/advanced_filters_drawer.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,13 +19,6 @@ class SearchPage extends ConsumerStatefulWidget {
 class _SearchPageState extends ConsumerState<SearchPage> {
   final ScrollController _scrollController = ScrollController();
 
-  final TextEditingController _categoryController = TextEditingController();
-  final TextEditingController _languageController = TextEditingController();
-  final TextEditingController _contentModelController = TextEditingController();
-  final TextEditingController _createdFromController = TextEditingController();
-  final TextEditingController _createdToController = TextEditingController();
-  final TextEditingController _editedFromController = TextEditingController();
-  final TextEditingController _editedToController = TextEditingController();
 
   bool _urlHydrated = false;
   bool _showQueryPreview = false;
@@ -67,15 +60,6 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           .read(searchControllerProvider.notifier)
           .saveScrollOffset(_scrollController.position.pixels);
     }
-
-    _scrollController.dispose();
-    _categoryController.dispose();
-    _languageController.dispose();
-    _contentModelController.dispose();
-    _createdFromController.dispose();
-    _createdToController.dispose();
-    _editedFromController.dispose();
-    _editedToController.dispose();
     super.dispose();
   }
 
@@ -119,223 +103,52 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   }
 
   void _removeChip(QueryChipData chip) {
-    ref.read(searchControllerProvider.notifier).applyFilterUpdate((current) {
-      if (chip.id.startsWith('format:')) {
-        final formatName = chip.id.split(':').last;
-        return current.copyWith(
-            formats: Set<FileFormat>.from(current.formats)
-              ..removeWhere((f) => f.name == formatName));
-      } else if (chip.id.startsWith('category:')) {
-        final categoryName = chip.id.substring('category:'.length);
-        return current.copyWith(
-            categories: Set<String>.from(current.categories)
-              ..remove(categoryName));
-      } else if (chip.id == 'titleOnly')
-        return current.copyWith(titleOnly: false);
-      else if (chip.id == 'language')
-        return current.copyWith(clearLanguageCode: true);
-      else if (chip.id == 'contentModel')
-        return current.copyWith(clearContentModel: true);
-      else if (chip.id == 'localOnly')
-        return current.copyWith(localOnly: false);
-      else if (chip.id == 'createdFrom' || chip.id == 'createdTo')
-        return current.copyWith(clearCreatedDate: true);
-      else if (chip.id == 'editedFrom' || chip.id == 'editedTo')
-        return current.copyWith(clearEditedDate: true);
-      return current;
-    });
-  }
+    final current = ref.read(searchControllerProvider).filterState;
+    SearchState next = current;
 
-  Future<void> _openAdvancedFilters() async {
-    final currentState = ref.read(searchControllerProvider).filterState;
-    _categoryController.text = currentState.categories.join(', ');
-    _languageController.text = currentState.languageCode ?? '';
-    _contentModelController.text = currentState.contentModel ?? '';
-    _createdFromController.text = currentState.createdDate?.from ?? '';
-    _createdToController.text = currentState.createdDate?.to ?? '';
-    _editedFromController.text = currentState.editedDate?.from ?? '';
-    _editedToController.text = currentState.editedDate?.to ?? '';
+    if (chip.id.startsWith('format:')) {
+      final formatName = chip.id.split(':').last;
+      next = current.copyWith(
+          formats: Set<FileFormat>.from(current.formats)
+            ..removeWhere((f) => f.name == formatName));
+    } else if (chip.id.startsWith('category:')) {
+      final categoryName = chip.id.substring('category:'.length);
+      next = current.copyWith(
+          categories: Set<String>.from(current.categories)
+            ..remove(categoryName));
+    } else if (chip.id == 'titleOnly') {
+      next = current.copyWith(titleOnly: false);
+    } else if (chip.id == 'language') {
+      next = current.copyWith(clearLanguageCode: true);
+    } else if (chip.id == 'contentModel') {
+      next = current.copyWith(clearContentModel: true);
+    } else if (chip.id == 'localOnly') {
+      next = current.copyWith(localOnly: false);
+    } else if (chip.id == 'createdFrom' || chip.id == 'createdTo') {
+      next = current.copyWith(clearCreatedDate: true);
+    } else if (chip.id == 'editedFrom' || chip.id == 'editedTo') {
+      next = current.copyWith(clearEditedDate: true);
+    } else if (chip.id == 'depicts') {
+      next = current.copyWith(clearDepicts: true);
+    } else if (chip.id == 'license') {
+      next = current.copyWith(licensePreset: LicensePreset.any);
+    } else if (chip.id == 'quality') {
+      next = current.copyWith(qualityFilter: QualityFilter.any);
+    } else if (chip.id == 'minWidth') {
+      next = current.copyWith(clearMinWidth: true);
+    } else if (chip.id == 'minHeight') {
+      next = current.copyWith(clearMinHeight: true);
+    } else if (chip.id == 'nearCoord') {
+      next = current.copyWith(clearNearCoord: true);
+    } else if (chip.id.startsWith('exclude:')) {
+      final excludeName = chip.id.substring('exclude:'.length);
+      next = current.copyWith(
+          excludeTerms: Set<String>.from(current.excludeTerms)
+            ..remove(excludeName));
+    }
 
-    bool titleOnly = currentState.titleOnly;
-    bool deepCategoryMode = currentState.deepCategoryMode;
-    bool localOnly = currentState.localOnly;
-
-    await showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Advanced filters',
-      barrierColor: Colors.black54,
-      pageBuilder: (_, __, ___) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Align(
-              alignment: Alignment.centerRight,
-              child: Material(
-                color: const Color(0xFF111111),
-                child: SizedBox(
-                  width: 420,
-                  child: SafeArea(
-                    child: Column(
-                      children: [
-                        _buildDrawerHeader(context),
-                        Expanded(
-                          child: ListView(
-                            padding: const EdgeInsets.all(16),
-                            children: [
-                              _buildDrawerTextField(
-                                  controller: _categoryController,
-                                  label: 'Categories',
-                                  hint: 'Maps, Astronomy, Diagrams'),
-                              const SizedBox(height: 14),
-                              SwitchListTile(
-                                  value: deepCategoryMode,
-                                  onChanged: (v) =>
-                                      setModalState(() => deepCategoryMode = v),
-                                  title: const Text('Include subcategories'),
-                                  activeColor: const Color(0xFF3D7EFF)),
-                              SwitchListTile(
-                                  value: titleOnly,
-                                  onChanged: (v) =>
-                                      setModalState(() => titleOnly = v),
-                                  title: const Text('Search title only'),
-                                  activeColor: const Color(0xFF3D7EFF)),
-                              SwitchListTile(
-                                  value: localOnly,
-                                  onChanged: (v) =>
-                                      setModalState(() => localOnly = v),
-                                  title: const Text('Local only'),
-                                  activeColor: const Color(0xFF3D7EFF)),
-                              const SizedBox(height: 12),
-                              _buildDrawerTextField(
-                                  controller: _languageController,
-                                  label: 'Language code',
-                                  hint: 'en, fr, ja'),
-                              const SizedBox(height: 12),
-                              _buildDrawerTextField(
-                                  controller: _contentModelController,
-                                  label: 'Content model',
-                                  hint: 'json'),
-                              const SizedBox(height: 18),
-                              const Text('Created date',
-                                  style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600)),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  Expanded(
-                                      child: _buildDrawerTextField(
-                                          controller: _createdFromController,
-                                          label: 'From',
-                                          hint: '2024 or 2024-01')),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                      child: _buildDrawerTextField(
-                                          controller: _createdToController,
-                                          label: 'To',
-                                          hint: '2025 or 2025-12')),
-                                ],
-                              ),
-                              const SizedBox(height: 18),
-                              const Text('Edited date',
-                                  style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600)),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  Expanded(
-                                      child: _buildDrawerTextField(
-                                          controller: _editedFromController,
-                                          label: 'From',
-                                          hint: '2024 or today-1y')),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                      child: _buildDrawerTextField(
-                                          controller: _editedToController,
-                                          label: 'To',
-                                          hint: '2025 or today')),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        _buildDrawerActions(
-                          context,
-                          onApply: () {
-                            ref
-                                .read(searchControllerProvider.notifier)
-                                .applyFilterUpdate((current) {
-                              final categories = _categoryController.text
-                                  .split(',')
-                                  .map((e) => e.trim())
-                                  .where((e) => e.isNotEmpty)
-                                  .toSet();
-                              return current.copyWith(
-                                categories: categories,
-                                deepCategoryMode: deepCategoryMode,
-                                titleOnly: titleOnly,
-                                localOnly: localOnly,
-                                languageCode:
-                                    _languageController.text.trim().isEmpty
-                                        ? null
-                                        : _languageController.text.trim(),
-                                contentModel:
-                                    _contentModelController.text.trim().isEmpty
-                                        ? null
-                                        : _contentModelController.text.trim(),
-                                createdDate: (_createdFromController.text
-                                            .trim()
-                                            .isEmpty &&
-                                        _createdToController.text
-                                            .trim()
-                                            .isEmpty)
-                                    ? null
-                                    : DateFilter(
-                                        from: _createdFromController.text
-                                                .trim()
-                                                .isEmpty
-                                            ? null
-                                            : _createdFromController.text
-                                                .trim(),
-                                        to: _createdToController.text
-                                                .trim()
-                                                .isEmpty
-                                            ? null
-                                            : _createdToController.text.trim()),
-                                editedDate: (_editedFromController.text
-                                            .trim()
-                                            .isEmpty &&
-                                        _editedToController.text.trim().isEmpty)
-                                    ? null
-                                    : DateFilter(
-                                        from: _editedFromController.text
-                                                .trim()
-                                                .isEmpty
-                                            ? null
-                                            : _editedFromController.text.trim(),
-                                        to: _editedToController.text
-                                                .trim()
-                                                .isEmpty
-                                            ? null
-                                            : _editedToController.text.trim()),
-                              );
-                            });
-                            Navigator.of(context).pop();
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
+    // THE FIX: Trigger the actual network request instead of just updating the variable
+    ref.read(searchControllerProvider.notifier).search(next.queryText, overrideState: next);
   }
 
   @override
@@ -360,12 +173,12 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
     return Scaffold(
       backgroundColor: const Color(0xFF0B0B0B),
+      endDrawer: const AdvancedFiltersDrawer(),
       body: Column(
         children: [
           SearchTopBar(
             initialQuery: filterState.queryText,
             onSearch: _search,
-            onAdvanced: _openAdvancedFilters,
           ),
           _buildTabBar(filterState),
           _buildFormatChips(filterState),
@@ -730,97 +543,5 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       case SortMode.oldestCreated:
         return 'Oldest created';
     }
-  }
-
-  Widget _buildDrawerHeader(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: Color(0xFF1E1E1E)))),
-      child: Row(
-        children: [
-          const Expanded(
-              child: Text('Advanced filters',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600))),
-          IconButton(
-              onPressed: () => Navigator.of(context).pop(),
-              icon: const Icon(Icons.close, color: Color(0xFF8A8A8A))),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDrawerTextField(
-      {required TextEditingController controller,
-      required String label,
-      required String hint}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label,
-            style: const TextStyle(
-                color: Color(0xFF9A9A9A),
-                fontSize: 12,
-                fontWeight: FontWeight.w600)),
-        const SizedBox(height: 6),
-        TextField(
-          keyboardType: TextInputType.url,
-          textInputAction: TextInputAction.search,
-          autocorrect: false,
-          enableSuggestions: false,
-          spellCheckConfiguration: const SpellCheckConfiguration.disabled(),
-          controller: controller,
-          style: const TextStyle(fontSize: 13, color: Colors.white),
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: const TextStyle(color: Color(0xFF4A4A4A), fontSize: 13),
-            filled: true,
-            fillColor: const Color(0xFF181818),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide.none),
-            focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide:
-                    const BorderSide(color: Color(0xFF3D7EFF), width: 1)),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDrawerActions(BuildContext context,
-      {required VoidCallback onApply}) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: const BoxDecoration(
-          border: Border(top: BorderSide(color: Color(0xFF1E1E1E)))),
-      child: Row(
-        children: [
-          Expanded(
-              child: OutlinedButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFF2A2A2A)),
-                      foregroundColor: const Color(0xFFB0B0B0),
-                      padding: const EdgeInsets.symmetric(vertical: 13)),
-                  child: const Text('Cancel'))),
-          const SizedBox(width: 10),
-          Expanded(
-              child: ElevatedButton(
-                  onPressed: onApply,
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF3D7EFF),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 13)),
-                  child: const Text('Apply'))),
-        ],
-      ),
-    );
   }
 }

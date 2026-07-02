@@ -10,7 +10,7 @@ final searchControllerProvider =
 class SearchController extends Notifier<SearchViewState> {
   final SearchService _service = SearchService();
   final Map<SearchSessionKey, SearchSession> _sessions = {};
-  
+
   SearchSessionKey? _cachedSessionKey;
   int _searchGeneration = 0;
 
@@ -50,10 +50,11 @@ class SearchController extends Notifier<SearchViewState> {
 
   void hydrateFromUrl(Map<String, String> params) {
     if (params.isEmpty) return;
-    
-    final nextFilter = SearchUrlCodec.fromQueryParams(params, const SearchState());
+
+    final nextFilter =
+        SearchUrlCodec.fromQueryParams(params, const SearchState());
     _invalidateSessionKey();
-    
+
     state = state.copyWith(
       filterState: nextFilter,
       lastBuiltQuery: _service.buildQuery(nextFilter),
@@ -66,15 +67,19 @@ class SearchController extends Notifier<SearchViewState> {
     }
   }
 
-  Future<void> search(String query) async {
+  Future<void> search(String query, {SearchState? overrideState}) async {
+    if (overrideState != null) {
+      state = state.copyWith(filterState: overrideState);
+    }
+
     final cleanQuery = query.trim();
     if (cleanQuery.isEmpty) return;
 
     final generation = ++_searchGeneration;
     final nextFilter = state.filterState.copyWith(queryText: cleanQuery);
-    
+
     _invalidateSessionKey();
-    
+
     // Set loading state
     final loadingSession = const SearchSession().copyWith(
       hasSearched: true,
@@ -82,9 +87,9 @@ class SearchController extends Notifier<SearchViewState> {
       items: [],
       scrollOffset: 0,
     );
-    
+
     _sessions[_currentSessionKey(nextFilter)] = loadingSession;
-    
+
     state = state.copyWith(
       filterState: nextFilter,
       lastBuiltQuery: _service.buildQuery(nextFilter),
@@ -95,10 +100,12 @@ class SearchController extends Notifier<SearchViewState> {
     if (generation != _searchGeneration) return; // Prevent race conditions
 
     if (result == null) {
-      _updateSession(nextFilter, loadingSession.copyWith(
-        loading: false,
-        error: 'Search failed — check your connection.',
-      ));
+      _updateSession(
+          nextFilter,
+          loadingSession.copyWith(
+            loading: false,
+            error: 'Search failed — check your connection.',
+          ));
       return;
     }
 
@@ -106,32 +113,38 @@ class SearchController extends Notifier<SearchViewState> {
         ? result.items
         : _service.applyClientSort(result.items, nextFilter.sortMode);
 
-    _updateSession(nextFilter, loadingSession.copyWith(
-      items: sortedItems,
-      continueParams: result.continueParams,
-      hasMore: result.continueParams != null,
-      loading: false,
-    ));
+    _updateSession(
+        nextFilter,
+        loadingSession.copyWith(
+          items: sortedItems,
+          continueParams: result.continueParams,
+          hasMore: result.continueParams != null,
+          loading: false,
+        ));
   }
 
   Future<void> loadMore() async {
     final currentSession = state.activeSession;
-    if (currentSession.loadingMore || !currentSession.hasMore || state.filterState.queryText.isEmpty) {
+    if (currentSession.loadingMore ||
+        !currentSession.hasMore ||
+        state.filterState.queryText.isEmpty) {
       return;
     }
 
     final generation = _searchGeneration;
-    _updateSession(state.filterState, currentSession.copyWith(loadingMore: true));
+    _updateSession(
+        state.filterState, currentSession.copyWith(loadingMore: true));
 
     final result = await _service.fetchPage(
       state.filterState,
       continueParams: currentSession.continueParams,
     );
-    
+
     if (generation != _searchGeneration) return;
 
     if (result == null) {
-      _updateSession(state.filterState, currentSession.copyWith(loadingMore: false));
+      _updateSession(
+          state.filterState, currentSession.copyWith(loadingMore: false));
       return;
     }
 
@@ -145,12 +158,14 @@ class SearchController extends Notifier<SearchViewState> {
         ? merged
         : _service.applyClientSort(merged, state.filterState.sortMode);
 
-    _updateSession(state.filterState, currentSession.copyWith(
-      items: sortedItems,
-      continueParams: result.continueParams,
-      hasMore: result.continueParams != null,
-      loadingMore: false,
-    ));
+    _updateSession(
+        state.filterState,
+        currentSession.copyWith(
+          items: sortedItems,
+          continueParams: result.continueParams,
+          hasMore: result.continueParams != null,
+          loadingMore: false,
+        ));
   }
 
   // --- FILTER MUTATIONS ---
@@ -172,6 +187,7 @@ class SearchController extends Notifier<SearchViewState> {
   }
 
   void saveScrollOffset(double offset) {
-    _updateSession(state.filterState, state.activeSession.copyWith(scrollOffset: offset));
+    _updateSession(
+        state.filterState, state.activeSession.copyWith(scrollOffset: offset));
   }
 }
