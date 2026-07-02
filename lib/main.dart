@@ -1,5 +1,6 @@
 import 'package:commonslens/router.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 
 void main() {
@@ -7,7 +8,11 @@ void main() {
   // hash-based ones (e.g. /#/view?id=...), so URLs are shareable and
   // predictable while still fully supporting deep links and reloads.
   usePathUrlStrategy();
-  runApp(const WikiSearchApp());
+  runApp(
+    const ProviderScope(
+      child: WikiSearchApp(),
+    ),
+  );
 }
 
 class WikiSearchApp extends StatelessWidget {
