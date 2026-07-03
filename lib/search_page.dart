@@ -45,7 +45,9 @@ class _FeatureCardState extends State<_FeatureCard> {
           color: _hovered ? const Color(0xFF161616) : const Color(0xFF101010),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: _hovered ? const Color(0xFF3D7EFF).withValues(alpha: 0.5) : const Color(0xFF1E1E1E),
+            color: _hovered
+                ? const Color(0xFF3D7EFF).withValues(alpha: 0.5)
+                : const Color(0xFF1E1E1E),
           ),
         ),
         child: Column(
@@ -159,7 +161,6 @@ class _SearchPageState extends ConsumerState<SearchPage> {
               label: const Text('Cancel'),
             ),
             const Spacer(),
-
             ElevatedButton.icon(
               onPressed: selectedItems.isEmpty
                   ? null
@@ -291,7 +292,6 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             initialQuery: filterState.queryText,
             onSearch: _search,
           ),
-
           InkWell(
             onTap: () =>
                 setState(() => _isFiltersExpanded = !_isFiltersExpanded!),
@@ -321,7 +321,6 @@ class _SearchPageState extends ConsumerState<SearchPage> {
               ),
             ),
           ),
-
           AnimatedSize(
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeInOut,
@@ -349,82 +348,172 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   }
 
   Widget _buildLanding() {
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const WikiLogo(),
-            const SizedBox(height: 28),
-            const Text('CommonsLens Discovery Engine',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                    letterSpacing: -0.5,
-                    height: 1.2)),
-            const SizedBox(height: 12),
-            const Text(
-                'A high-performance media discovery interface for the world\'s largest free media archive.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    color: Color(0xFFAAAAAA), fontSize: 16, height: 1.5)),
-            const SizedBox(height: 32),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              alignment: WrapAlignment.center,
-              children: _examples
-                  .map((q) => ExampleChip(label: q, onTap: () => _search(q)))
-                  .toList(),
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // 1. The Beautiful Background Image
+        Image.network(
+          'https://upload.wikimedia.org/wikipedia/commons/1/12/Breil-Brigels._Uitzichtpunt._20-09-2025._%28actm.%29_11.jpg',
+          fit: BoxFit.cover,
+          // Fade in the background smoothly
+          frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+            if (wasSynchronouslyLoaded) return child;
+            return AnimatedOpacity(
+              opacity: frame == null ? 0 : 1,
+              duration: const Duration(seconds: 3),
+              curve: Curves.easeOut,
+              child: child,
+            );
+          },
+        ),
+
+        // 2. Dark Gradient Overlay (Fades from translucent top to solid dark bottom)
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              stops: const [0.0, 0.4, 1.0],
+              colors: [
+                const Color(0xFF0B0B0B).withValues(alpha: 0.65),
+                const Color(0xFF0B0B0B).withValues(alpha: 0.85),
+                const Color(0xFF0B0B0B),
+              ],
             ),
-            const SizedBox(height: 64),
-            
-            // THE NEW FEATURE GRID
-            ConstrainedBox(
+          ),
+        ),
+
+        // 3. The Scrollable Content
+        Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 60),
+            child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 900),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final isMobile = constraints.maxWidth < 600;
-                  return Wrap(
-                    spacing: 24,
-                    runSpacing: 24,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const WikiLogo(),
+                  const SizedBox(height: 32),
+
+                  // Hero Copy
+                  const Text('CommonsLens Discovery Engine',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          fontSize: 42,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          letterSpacing: -1.0,
+                          height: 1.1)),
+                  const SizedBox(height: 16),
+                  const Text(
+                      'A high-performance media discovery interface for the world\'s largest free media archive.\nEngineered specifically for scientists and researchers to navigate, filter, and extract massive datasets with zero UI lockup.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          color: Color(0xFFCCCCCC),
+                          fontSize: 18,
+                          height: 1.6,
+                          fontWeight: FontWeight.w400)),
+
+                  const SizedBox(height: 40),
+
+                  // Search Examples
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
                     alignment: WrapAlignment.center,
-                    children: [
-                      _FeatureCard(
-                        icon: Icons.travel_explore,
-                        title: 'Semantic Entity Search',
-                        description: 'Leverage Wikidata Q-codes to find conceptual matches and exact subjects, bypassing basic string overlaps. Match Depictions and Categories for powerful searching.',
-                        width: isMobile ? double.infinity : 400,
-                      ),
-                      _FeatureCard(
-                        icon: Icons.filter_alt_outlined,
-                        title: 'Advanced Metadata',
-                        description: 'Filter instantly by Creative Commons licenses, creation times, languages, geographical coordinates, and peer-reviewed quality assessments.',
-                        width: isMobile ? double.infinity : 400,
-                      ),
-                      _FeatureCard(
-                        icon: Icons.bolt,
-                        title: 'Native Hardware Rendering',
-                        description: 'Bypasses standard canvas limits to lazily load and decode massive archival images, videos, audios and documents with zero UI lockup.',
-                        width: isMobile ? double.infinity : 400,
-                      ),
-                      _FeatureCard(
-                        icon: Icons.archive_outlined,
-                        title: 'Client-Side Bulk Export',
-                        description: 'Select subsets of research data and compile in-memory .zip archives directly in the browser without server bottlenecks.',
-                        width: isMobile ? double.infinity : 400,
-                      ),
-                    ],
-                  );
-                },
+                    children: _examples
+                        .map((q) =>
+                            ExampleChip(label: q, onTap: () => _search(q)))
+                        .toList(),
+                  ),
+
+                  const SizedBox(height: 80),
+
+                  // Quick Navigation Guide
+                  Container(
+                    padding: const EdgeInsets.all(32),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF101010).withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFF1E1E1E)),
+                    ),
+                    child: const Column(
+                      children: [
+                        Text('HOW TO USE THE ENGINE',
+                            style: TextStyle(
+                                color: Color(0xFF3D7EFF),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 2.0)),
+                        SizedBox(height: 24),
+                        Text(
+                          '1. Start Your Search: Type a query in the search bar above to instantly access millions of freely usable images, videos, audio files, and documents.\n\n'
+                          "2. Quick File Filtering: Looking for a specific format? Use the quick file-type filters right below the search bar to narrow your results instantly.\n\n"
+                          "3. Dive into Deep Metadata: Click the Filters button to open the advanced search drawer. Here, you can isolate assets by exact creation dates, geographic coordinates, or peer-reviewed quality assessments.\n\n"
+                          "4. Leverage Semantic Search: Within the filters drawer, use the Depicts (Wikidata Q-codes) and Category fields to curate highly accurate results based on exact subject matter: ensuring you find exactly what you are looking for.\n\n"
+                          "5. Compile & Bulk Export: Building a dataset is easy. Long-press any media card to enter selection mode, choose your assets, and securely download them all at once as a .zip file directly in your browser.\n\n"
+                          "6. Review Licensing: All media found here is free to use! Simply click on any item to expand it and view its specific Creative Commons license and usage terms.\n\n"
+                          "CommonsLens is a non-commercial, fair-use research tool. All media and data are sourced directly from Wikimedia Commons. CommonsLens does not make, host, own, or claim copyright over any of the displayed content.",
+                          style: TextStyle(
+                            color: Color(0xFFAAAAAA),
+                            fontSize: 16,
+                            height: 1.8,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 80),
+
+                  // Your existing Feature Grid
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isMobile = constraints.maxWidth < 600;
+                      return Wrap(
+                        spacing: 24,
+                        runSpacing: 24,
+                        alignment: WrapAlignment.center,
+                        children: [
+                          _FeatureCard(
+                            icon: Icons.travel_explore,
+                            title: 'Semantic Entity Search',
+                            description:
+                                'Leverage Wikidata Q-codes to find conceptual matches and exact subjects, bypassing basic string overlaps.',
+                            width: isMobile ? double.infinity : 400,
+                          ),
+                          _FeatureCard(
+                            icon: Icons.filter_alt_outlined,
+                            title: 'Advanced Metadata',
+                            description:
+                                'Filter instantly by Creative Commons licenses, creation times, languages, geographical coordinates, and more.',
+                            width: isMobile ? double.infinity : 400,
+                          ),
+                          _FeatureCard(
+                            icon: Icons.bolt,
+                            title: 'Native Hardware Rendering',
+                            description:
+                                'Bypasses standard canvas limits to lazily load massive archival files with zero UI lockup.',
+                            width: isMobile ? double.infinity : 400,
+                          ),
+                          _FeatureCard(
+                            icon: Icons.archive_outlined,
+                            title: 'Client-Side Bulk Export',
+                            description:
+                                'Select subsets of research data and compile in-memory .zip archives directly in the browser.',
+                            width: isMobile ? double.infinity : 400,
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 40),
+                ],
               ),
             ),
-          ],
+          ),
         ),
-      ),
+      ],
     );
   }
 
