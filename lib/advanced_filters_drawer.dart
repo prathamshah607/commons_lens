@@ -18,7 +18,6 @@ class AdvancedFiltersDrawer extends ConsumerStatefulWidget {
 class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
   final SearchService _service = SearchService();
 
-  // NEW FILTERS
   late TextEditingController _minWidthCtrl;
   late TextEditingController _minHeightCtrl;
   late TextEditingController _latCtrl;
@@ -27,7 +26,6 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
 
   Set<String> _selectedCategories = {};
 
-  // CLASSIC FILTERS (Restored)
   late TextEditingController _langCtrl;
   late TextEditingController _modelCtrl;
   late TextEditingController _createdFromCtrl;
@@ -40,7 +38,6 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
     super.initState();
     final state = ref.read(searchControllerProvider).filterState;
 
-    // Init New
     _minWidthCtrl =
         TextEditingController(text: state.minWidth?.toString() ?? '');
     _minHeightCtrl =
@@ -54,7 +51,6 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
 
     _selectedCategories = Set.from(state.categories);
 
-    // Init Classic
     _langCtrl = TextEditingController(text: state.languageCode ?? '');
     _modelCtrl = TextEditingController(text: state.contentModel ?? '');
     _createdFromCtrl =
@@ -81,7 +77,6 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
   }
 
   void _applyFilters() {
-    // Parse New
     final w = int.tryParse(_minWidthCtrl.text);
     final h = int.tryParse(_minHeightCtrl.text);
     final lat = double.tryParse(_latCtrl.text);
@@ -93,7 +88,6 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
       coordFilter = NearCoordFilter(lat: lat, lng: lng, radiusKm: rad);
     }
 
-    // Parse Classic
     final cats = _selectedCategories;
     final lang = _langCtrl.text.trim().isEmpty ? null : _langCtrl.text.trim();
     final model =
@@ -112,7 +106,6 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
 
     final currentState = ref.read(searchControllerProvider).filterState;
 
-    // Update the global state with EVERYTHING
     final nextState = currentState.copyWith(
       minWidth: w,
       clearMinWidth: w == null,
@@ -131,11 +124,10 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
       clearEditedDate: edited == null,
     );
 
-    // Trigger the search
     ref
         .read(searchControllerProvider.notifier)
         .search(nextState.queryText, overrideState: nextState);
-    Navigator.of(context).pop(); // Close drawer
+    Navigator.of(context).pop();
   }
 
   @override
@@ -174,7 +166,6 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
               child: ListView(
                 padding: const EdgeInsets.all(20),
                 children: [
-                  // --- THE NEW FILTERS ---
 
                   _buildSectionHeader('DEPICTS (SUBJECT)'),
                   Autocomplete<DepictsEntity>(
@@ -305,8 +296,6 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
                   ),
                   const SizedBox(height: 24),
 
-                  // --- THE CLASSIC FILTERS ---
-
                   _buildSectionHeader('CATEGORIES'),
                   if (_selectedCategories.isNotEmpty) ...[
                     Wrap(
@@ -392,7 +381,6 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
                                           const TextStyle(color: Colors.white)),
                                   onTap: () {
                                     onSelected(option);
-                                    // Hack to clear the autocomplete field after selection
                                     FocusScope.of(context).unfocus();
                                   },
                                 );
@@ -592,7 +580,6 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
               ),
             ),
 
-            // BOTTOM APPLY BUTTON
             Container(
               padding: const EdgeInsets.all(20),
               decoration: const BoxDecoration(

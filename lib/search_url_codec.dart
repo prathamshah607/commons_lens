@@ -1,9 +1,5 @@
 import 'search_models.dart';
 
-/// Converts a [SearchState] to/from URL query parameters so that:
-///  - every distinct query + filter combination maps to a distinct URL, and
-///  - that URL alone (no in-memory state) is enough to reconstruct the
-///    exact same [SearchState] on a fresh page load.
 class SearchUrlCodec {
   const SearchUrlCodec._();
 
@@ -56,9 +52,7 @@ class SearchUrlCodec {
     return params;
   }
 
-  /// Rebuilds a [SearchState] from URL query parameters, layered on top of
-  /// [base] (normally `const SearchState()`) so anything absent from the URL
-  /// simply falls back to the default.
+
   static SearchState fromQueryParams(
     Map<String, String> params,
     SearchState base,
@@ -127,8 +121,6 @@ class SearchUrlCodec {
     );
   }
 
-  /// True if the params carry enough context (a query) to rebuild a
-  /// full search gallery rather than treating this as a bare single-file link.
   static bool hasSearchContext(Map<String, String> params) {
     return (params['q'] ?? '').trim().isNotEmpty;
   }

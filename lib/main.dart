@@ -5,9 +5,6 @@ import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:go_router/go_router.dart';
 
 void main() {
-  // Use clean path-based URLs (e.g. /view?id=...) instead of the default
-  // hash-based ones (e.g. /#/view?id=...), so URLs are shareable and
-  // predictable while still fully supporting deep links and reloads.
   GoRouter.optionURLReflectsImperativeAPIs = true;
   usePathUrlStrategy();
   runApp(
@@ -23,7 +20,7 @@ class WikiSearchApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      routerConfig: appRouter, // <-- The router completely replaces 'home'
+      routerConfig: appRouter,
       title: 'Commons Lens',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(

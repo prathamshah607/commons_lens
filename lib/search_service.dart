@@ -5,23 +5,11 @@ import 'search_models.dart';
 class SearchService {
   static const int pageSize = 50;
   
-  // OPTIMIZATION 1: Persistent HTTP Client for connection pooling.
-  // Reuses TCP/TLS handshakes across Scatter-Gather streams and pagination.
   static final http.Client _client = http.Client();
 
-  // OPTIMIZATION 2: Pre-compiled Regex.
-  // Prevents recompiling the pattern 30+ times per network response.
   static final RegExp _htmlTagRegex = RegExp(r'<[^>]*>');
 
-  // --- LICENSE / QUALITY CLAUSE TABLES ---
-  // Hardcoded, not a general QID:text DB — Commons only really uses a
-  // handful of standard licenses, so this is a fixed, small lookup, unlike
-  // "depicts" which needs arbitrary entity resolution (see
-  // searchDepictsEntities below). Every clause here was verified against the
-  // live API — counts recorded alongside for reference.
-  //
-  // NOTE: publicDomain uses copyright-status (P6216), everything else uses
-  // license (P275) — these are different SDC properties.
+  
   static const Map<LicensePreset, String> _licenseClauses = {
     LicensePreset.cc0: 'haswbstatement:P275=Q6938433', // ~9.9M hits
     LicensePreset.ccBy4: 'haswbstatement:P275=Q20007257', // ~7.6M hits
@@ -34,11 +22,8 @@ class SearchService {
     QualityFilter.valuedImage: 'hastemplate:"Valued image"', // ~55.6k hits
   };
 
-  // --- NEW: STANDALONE DIRECT FETCH ---
-  // Fetches a single specific piece of media by its exact title for deep linking.
   Future<SearchItem?> fetchSingleItem(String filename) async {
     try {
-      // Wikimedia requires the 'File:' prefix for explicit title lookups
       final title = filename.startsWith('File:') ? filename : 'File:$filename';
       
       final params = <String, String>{
@@ -65,10 +50,8 @@ class SearchService {
 
       if (pages.isEmpty) return null;
 
-      // Extract the exact page
       final page = pages.values.first;
       
-      // If the page has "missing": "", it means the file doesn't exist
       if (page.containsKey('missing')) return null;
 
       final infoList = page['imageinfo'] as List?;
@@ -87,7 +70,6 @@ class SearchService {
 
       final rawTitle = page['title'] as String? ?? '';
       
-      // Extended Metadata Parsing
       final ext = info['extmetadata'] as Map<String, dynamic>? ?? {};
       final artistHtml = ext['Artist']?['value']?.toString() ?? '';
       final licenseShort = ext['LicenseShortName']?['value']?.toString() ?? '';
@@ -103,8 +85,7 @@ class SearchService {
         url: originalUrl,
         thumb: thumb,
         commonsUrl: 'https://commons.wikimedia.org/wiki/${Uri.encodeComponent(rawTitle)}',
-        // In direct title lookups, the snippet isn't returned natively by 'prop=info', 
-        // so we gracefully fall back to the title as the description header.
+       
         snippet: rawTitle, 
         mime: mime,
         isSvg: isSvg,
@@ -123,11 +104,6 @@ class SearchService {
     }
   }
 
-  // --- DEPICTS AUTOCOMPLETE (live, no local QID:label DB) ---
-  // Hits Wikidata's wbsearchentities directly — the same endpoint the
-  // official Wikidata/Commons entity-suggester widgets use. Call this
-  // on-the-fly as the user types (debounce in the UI layer), then feed the
-  // chosen DepictsEntity into SearchState.depicts.
   Future<List<DepictsEntity>> searchDepictsEntities(
     String text, {
     int limit = 8,
@@ -172,7 +148,6 @@ class SearchService {
     }
   }
 
-  // --- CATEGORY AUTOCOMPLETE ---
   Future<List<String>> searchCategories(String query) async {
     final clean = query.trim();
     if (clean.isEmpty) return [];
@@ -193,7 +168,6 @@ class SearchService {
     }
   }
 
-  // --- QUERY BUILDER ---
   QueryBuildResult buildQuery(SearchState state, {FileFormat? overrideFormat}) {
     final parts = <String>[];
     final chips = <QueryChipData>[];
@@ -213,7 +187,6 @@ class SearchService {
       }
     }
 
-    // 1. Tab Macro Filters
     switch (state.tab) {
       case MediaTabType.allMedia:
         chips.add(const QueryChipData(id: 'tab', label: 'All media'));
@@ -240,7 +213,6 @@ class SearchService {
         break;
     }
 
-    // Generate chips for the UI regardless of override
     for (final format in state.formats.toList()
       ..sort((a, b) => a.name.compareTo(b.name))) {
       chips.add(
@@ -251,7 +223,6 @@ class SearchService {
       );
     }
 
-    // 2. The Micro Filter: Apply exact CirrusSearch filemime for Scatter-Gather
     if (overrideFormat != null) {
       parts.add('filemime:"${_getMimeString(overrideFormat)}"');
     }
@@ -321,7 +292,6 @@ class SearchService {
       }
     }
 
-    // Curation tier (hastemplate: — see _qualityClauses)
     if (state.qualityFilter != QualityFilter.any) {
       final clause = _qualityClauses[state.qualityFilter];
       if (clause != null) {
@@ -333,7 +303,6 @@ class SearchService {
       }
     }
 
-    // Minimum resolution (filew: / fileh: — confirmed working)
     if (state.minWidth != null && state.minWidth! > 0) {
       parts.add('filew:>${state.minWidth}');
       chips.add(QueryChipData(
@@ -349,9 +318,6 @@ class SearchService {
       ));
     }
 
-    // Depicts (structured-data P180 statement) — QID resolved live via
-    // Wikidata's wbsearchentities, never stored locally. See
-    // searchDepictsEntities.
     if (state.depicts != null) {
       final entity = state.depicts!;
       parts.add('haswbstatement:P180=${entity.qid}');
@@ -361,7 +327,6 @@ class SearchService {
       ));
     }
 
-    // Geosearch (nearcoord: — confirmed working directly, no SDC needed)
     if (state.nearCoord != null) {
       final coord = state.nearCoord!;
       final radius = coord.radiusKm.toStringAsFixed(0);
@@ -373,7 +338,6 @@ class SearchService {
       ));
     }
 
-    // Free-text exclusion terms (plain CirrusSearch "-term" syntax)
     for (final term in state.excludeTerms.toList()..sort()) {
       final safe = term.trim();
       if (safe.isEmpty) continue;
@@ -421,22 +385,18 @@ class SearchService {
     ].join('|');
   }
 
-  // --- THE SCATTER-GATHER ORCHESTRATOR ---
   Future<SearchResponse?> fetchPage(
     SearchState state, {
     required Map<String, dynamic>? continueParams,
   }) async {
-    // Phase 1: No specific chips selected -> Do a normal macro fetch.
     if (state.formats.isEmpty) {
       return _fetchSingle(state, continueParams: continueParams, overrideFormat: null);
     }
 
-    // Phase 2: Fan-Out (Scatter) to multiple parallel streams.
     final streams = <FileFormat, List<SearchItem>>{};
     final newMultiContinue = <String, dynamic>{};
     bool anySuccess = false;
 
-    // Unpack the multi-cursor dictionary
     final multiTokens = continueParams?['_multi'] as Map<String, dynamic>?;
 
     final futures = <Future<void>>[];
@@ -444,7 +404,6 @@ class SearchService {
     for (final format in state.formats) {
       final formatKey = format.name;
 
-      // If we are paging, and this format's stream is empty, skip it.
       if (continueParams != null && multiTokens != null && !multiTokens.containsKey(formatKey)) {
         continue;
       }
@@ -467,12 +426,10 @@ class SearchService {
 
     if (!anySuccess && streams.isEmpty) return null;
 
-    // Phase 3: Fan-In & Arrange
     final sortedItems = _multiSort(streams, state.sortMode);
 
     return SearchResponse(
       items: sortedItems,
-      // Repack the multi-cursor dictionary
       continueParams: newMultiContinue.isNotEmpty ? {'_multi': newMultiContinue} : null,
     );
   }
@@ -498,7 +455,6 @@ class SearchService {
         'prop': 'info|imageinfo',
         'inprop': 'url',
         'gsrnamespace': '6',
-        // EXTENDED PAYLOAD: Added extmetadata, user, and dimensions
         'iiprop': 'url|size|mime|extmetadata|user|dimensions',
         'iiurlwidth': '320',
       };
@@ -529,7 +485,6 @@ class SearchService {
 
       final uri = Uri.https('commons.wikimedia.org', '/w/api.php', params);
       
-      // OPTIMIZATION: Reusing the persistent HTTP client
       final response = await _client.get(uri, headers: {
         'Api-User-Agent': 'CommonslensApp/1.0 (Flutter Web)',
       }).timeout(const Duration(seconds: 15));
@@ -558,7 +513,6 @@ class SearchService {
 
         final rawTitle = page['title'] as String? ?? '';
         
-        // NEW: Extended Metadata Parsing
         final ext = info['extmetadata'] as Map<String, dynamic>? ?? {};
         final artistHtml = ext['Artist']?['value']?.toString() ?? '';
         final licenseShort = ext['LicenseShortName']?['value']?.toString() ?? '';
@@ -580,7 +534,6 @@ class SearchService {
             isSvg: isSvg,
             timestamp: page['timestamp'] as String?,
             descriptionUrl: descriptionUrl,
-            // New fields injected into the model
             artistHtml: artistHtml,
             licenseShortName: licenseShort,
             licenseUrl: licenseUrl,
@@ -592,7 +545,6 @@ class SearchService {
         );
       }
 
-      // If we aren't enforcing a strict format, run the safety filter
       final filteredItems = overrideFormat == null
           ? items.where((item) => _matchesMacroFormat(item, state.formats)).toList()
           : items;
@@ -603,12 +555,10 @@ class SearchService {
     }
   }
 
-  // --- THE MERGER & ARRANGER ---
   List<SearchItem> _multiSort(Map<FileFormat, List<SearchItem>> streams, SortMode mode) {
     final result = <SearchItem>[];
 
     if (mode == SortMode.relevance) {
-      // Relevance Round-Robin: Preserves Wikipedia's internal scoring by taking the top result of each stream sequentially
       bool added = true;
       int i = 0;
       while (added) {
@@ -622,7 +572,6 @@ class SearchService {
         i++;
       }
     } else {
-      // Dump all and apply hard sorts
       for (final list in streams.values) {
         result.addAll(list);
       }
@@ -630,7 +579,6 @@ class SearchService {
       if (mode == SortMode.titleMatch) {
         result.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
       } else {
-        // Date strings are ISO8601 so standard string comparison works perfectly
         result.sort((a, b) {
           final tA = a.timestamp ?? '';
           final tB = b.timestamp ?? '';
@@ -700,7 +648,6 @@ class SearchService {
     return sorted;
   }
 
-  // OPTIMIZATION: Uses the static pre-compiled Regex.
   static String _stripHtml(String s) {
     return s.replaceAll(_htmlTagRegex, '').trim();
   }

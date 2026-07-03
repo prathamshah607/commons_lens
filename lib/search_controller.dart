@@ -24,8 +24,6 @@ class SearchController extends Notifier<SearchViewState> {
     );
   }
 
-  // --- CACHE MANAGEMENT ---
-
   void _invalidateSessionKey() {
     _cachedSessionKey = null;
   }
@@ -45,8 +43,6 @@ class SearchController extends Notifier<SearchViewState> {
     _sessions[_currentSessionKey(filter)] = session;
     state = state.copyWith(activeSession: session);
   }
-
-  // --- ACTIONS ---
 
   void hydrateFromUrl(Map<String, String> params) {
     if (params.isEmpty) return;
@@ -80,7 +76,6 @@ class SearchController extends Notifier<SearchViewState> {
 
     _invalidateSessionKey();
 
-    // Set loading state
     final loadingSession = const SearchSession().copyWith(
       hasSearched: true,
       loading: true,
@@ -97,14 +92,14 @@ class SearchController extends Notifier<SearchViewState> {
     );
 
     final result = await _service.fetchPage(nextFilter, continueParams: null);
-    if (generation != _searchGeneration) return; // Prevent race conditions
+    if (generation != _searchGeneration) return;
 
     if (result == null) {
       _updateSession(
           nextFilter,
           loadingSession.copyWith(
             loading: false,
-            error: 'Search failed — check your connection.',
+            error: 'Search failed: Please check your internet connection.',
           ));
       return;
     }
@@ -168,8 +163,6 @@ class SearchController extends Notifier<SearchViewState> {
         ));
   }
 
-  // --- FILTER MUTATIONS ---
-
   void applyFilterUpdate(SearchState Function(SearchState current) updater) {
     final nextFilter = updater(state.filterState);
     if (nextFilter == state.filterState) return;
@@ -178,7 +171,7 @@ class SearchController extends Notifier<SearchViewState> {
     state = state.copyWith(
       filterState: nextFilter,
       lastBuiltQuery: _service.buildQuery(nextFilter),
-      activeSession: _getSession(nextFilter), // Pull from cache if it exists
+      activeSession: _getSession(nextFilter),
     );
 
     if (nextFilter.queryText.trim().isNotEmpty) {

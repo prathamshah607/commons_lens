@@ -64,17 +64,7 @@ class _SearchTopBarState extends State<SearchTopBar> {
       child: SafeArea(
         bottom: false,
         child: Row(
-          children: [
-            const Padding(
-              padding: EdgeInsets.only(right: 16),
-              child: Text('WIKI\nMEDIA',
-                  style: TextStyle(
-                      color: Color(0xFF3D7EFF),
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 2.5,
-                      height: 1.5)),
-            ),
+          children: [ 
             Expanded(
               child: SizedBox(
                 height: 38,

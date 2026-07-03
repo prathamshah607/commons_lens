@@ -36,11 +36,6 @@ enum SortMode {
   titleMatch,
 }
 
-// License, expressed as structured-data (SDC) statements on Commons.
-// Confirmed against the live API — see commons_filter_probe.py results.
-// NOTE: publicDomain uses copyright-status (P6216), not license (P275) —
-// public domain works aren't "licensed" in the SDC model, they're marked
-// as having no copyright restriction.
 enum LicensePreset {
   any,
   cc0,
@@ -64,8 +59,6 @@ String licensePresetLabel(LicensePreset preset) {
   }
 }
 
-// Curation/assessment tier, via hastemplate:. "Featured picture" is
-// deliberately excluded — probed as 0 hits, real template name unconfirmed.
 enum QualityFilter {
   any,
   qualityImage,
@@ -115,8 +108,6 @@ class DateFilter {
   }
 }
 
-// Geosearch filter — maps directly to CirrusSearch's nearcoord: keyword.
-// Confirmed working against Commons (326k hits within 10km of Paris in probe).
 class NearCoordFilter {
   final double lat;
   final double lng;
@@ -137,8 +128,6 @@ class NearCoordFilter {
   }
 }
 
-// A single Wikidata entity, resolved live via wbsearchentities — never
-// stored locally as a lookup table. See SearchService.searchDepictsEntities.
 class DepictsEntity {
   final String qid;
   final String label;
@@ -444,7 +433,6 @@ class SearchItem {
   final String? timestamp;
   final String? descriptionUrl;
   
-  // NEW ExtMetadata fields
   final String artistHtml;
   final String licenseShortName;
   final String licenseUrl;

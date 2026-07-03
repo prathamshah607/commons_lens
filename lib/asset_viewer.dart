@@ -7,12 +7,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart'; // <-- Added Riverpod
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'search_models.dart';
 import 'search_service.dart';
 import 'search_url_codec.dart';
-import 'search_controller.dart'; // <-- Link to the brain
+import 'search_controller.dart';
 
 class AssetViewer extends ConsumerStatefulWidget {
   final String fileId;
@@ -30,7 +30,7 @@ class AssetViewer extends ConsumerStatefulWidget {
 
 class _AssetViewerState extends ConsumerState<AssetViewer> {
   late PageController _pageController;
-  late int _currentIndex; // Removed the -1
+  late int _currentIndex;
   bool _showMobileInfo = false;
 
   bool _urlHydrated = false;
@@ -47,13 +47,11 @@ class _AssetViewerState extends ConsumerState<AssetViewer> {
   void initState() {
     super.initState();
 
-    // PRE-CALCULATE THE INDEX FROM THE HOT CACHE
     final session = ref.read(searchControllerProvider).activeSession;
     final targetId = _normalizedTitle(widget.fileId);
     int startIndex = session.items
         .indexWhere((it) => _normalizedTitle(it.title) == targetId);
 
-    // Set the state and page controller immediately
     _currentIndex = startIndex >= 0 ? startIndex : 0;
     _pageController = PageController(initialPage: _currentIndex);
 
@@ -74,8 +72,6 @@ class _AssetViewerState extends ConsumerState<AssetViewer> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
 
-          // THE SIMPLE FIX: Only hydrate if memory is empty!
-          // If we tapped an image in-app, the cache is hot, so do nothing.
           if (ref.read(searchControllerProvider).activeSession.items.isEmpty) {
             ref.read(searchControllerProvider.notifier).hydrateFromUrl(params);
           }
@@ -96,13 +92,12 @@ class _AssetViewerState extends ConsumerState<AssetViewer> {
 
     if (newFileId.isEmpty || newFileId == oldFileId) return;
 
-    // Handle Browser Back/Forward buttons
     final items = _getCombinedItems();
     if (items.isEmpty) return;
 
     if (_currentIndex >= 0 && _currentIndex < items.length) {
       if (_normalizedTitle(items[_currentIndex].title) == newFileId) {
-        return; // URL changed because of our own swipe. Do nothing.
+        return;
       }
     }
 
@@ -142,7 +137,6 @@ class _AssetViewerState extends ConsumerState<AssetViewer> {
 
     List<SearchItem> items = List.from(gallery);
 
-    // Inject the deep-linked item if it's not already in the loaded gallery
     if (_injectedTarget != null) {
       if (!items.any((it) =>
           _normalizedTitle(it.title) ==
@@ -172,7 +166,6 @@ class _AssetViewerState extends ConsumerState<AssetViewer> {
       ref.read(searchControllerProvider.notifier).loadMore();
     }
 
-    // Sync URL without rebuilding the stack
     final items = _getCombinedItems();
     if (items.isNotEmpty) {
       final params = Map<String, String>.from(
@@ -224,11 +217,9 @@ class _AssetViewerState extends ConsumerState<AssetViewer> {
           leading: IconButton(
             icon: const Icon(Icons.close, color: Colors.white),
             onPressed: () {
-              // If they clicked an image to get here, pop it off.
               if (context.canPop()) {
                 context.pop();
               } else {
-                // If they pasted a link directly into the browser, fallback to go()
                 context.go(widget.returnUrl);
               }
             },
@@ -241,7 +232,6 @@ class _AssetViewerState extends ConsumerState<AssetViewer> {
       );
     }
 
-    // Failsafe bounds
     if (_currentIndex >= items.length || _currentIndex < 0) {
       _currentIndex = 0;
     }
@@ -423,22 +413,19 @@ class _NativeMediaRendererState extends State<_NativeMediaRenderer> {
     final isVideo = widget.item.mediaKind == MediaKind.video;
     final isAudio = widget.item.mediaKind == MediaKind.audio;
 
-    // 1. Detect if it's an image or vector
     final isImage = widget.item.mediaKind == MediaKind.image ||
         widget.item.mediaKind == MediaKind.vector;
 
-    // 2. Add 'isImage' to the native HTML condition
     if (isVideo || isAudio || isPdf || isImage) {
       _isNativeHtml = true;
 
       ui_web.platformViewRegistry.registerViewFactory(_viewId, (int viewId) {
-        // 3. Render the native HTML <img> tag
         if (isImage) {
           return html.ImageElement()
             ..src = widget.item.url
             ..style.width = '100%'
             ..style.height = '100%'
-            ..style.objectFit = 'contain' // Ensures the image isn't squashed
+            ..style.objectFit = 'contain'
             ..style.backgroundColor = 'transparent'
             ..style.outline = 'none';
         } else if (isVideo) {
@@ -482,7 +469,6 @@ class _NativeMediaRendererState extends State<_NativeMediaRenderer> {
 
   @override
   Widget build(BuildContext context) {
-    // If it's an Image, Video, Audio, or PDF, it drops directly into this native view
     if (_isNativeHtml) {
       final isDesktop = MediaQuery.of(context).size.width >= 800;
       return Padding(
@@ -491,7 +477,6 @@ class _NativeMediaRendererState extends State<_NativeMediaRenderer> {
       );
     }
 
-    // Otherwise, show the fallback UI (for unknown files)
     return _buildFallbackUI(widget.item);
   }
 
@@ -751,7 +736,6 @@ class _DownloadSection extends StatelessWidget {
   });
 
   Future<void> _handleDownload(BuildContext context, String url) async {
-    // Show a quick toast so the user knows the network request started
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Downloading media...'),
@@ -759,7 +743,6 @@ class _DownloadSection extends StatelessWidget {
       ),
     );
 
-    // Call our custom forcing function
     await DownloadService.downloadSingleFile(url, item.title, item.extension);
   }
 
@@ -784,7 +767,6 @@ class _DownloadSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ElevatedButton.icon(
-          // Passed context here!
           onPressed: () => _handleDownload(context, item.url),
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF3D7EFF),
@@ -812,7 +794,6 @@ class _DownloadSection extends StatelessWidget {
               Expanded(
                 child: _SizeButton(
                   label: 'SMALL',
-                  // Passed context here!
                   onTap: () => _handleDownload(context, _getResizedUrl(640)),
                 ),
               ),
@@ -820,7 +801,6 @@ class _DownloadSection extends StatelessWidget {
               Expanded(
                 child: _SizeButton(
                   label: 'MEDIUM',
-                  // Passed context here!
                   onTap: () => _handleDownload(context, _getResizedUrl(1280)),
                 ),
               ),
@@ -828,7 +808,6 @@ class _DownloadSection extends StatelessWidget {
               Expanded(
                 child: _SizeButton(
                   label: 'LARGE',
-                  // Passed context here!
                   onTap: () => _handleDownload(context, _getResizedUrl(1920)),
                 ),
               ),

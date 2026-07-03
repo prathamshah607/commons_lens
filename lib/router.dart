@@ -16,8 +16,6 @@ final GoRouter appRouter = GoRouter(
         final params = state.uri.queryParameters;
         final fileId = params['id'] ?? '';
 
-        // Derive the return URL by simply removing the 'id' parameter.
-        // This preserves every search filter and tab perfectly.
         final returnParams = Map<String, String>.from(params)..remove('id');
         final returnUrl = Uri(
           path: '/',

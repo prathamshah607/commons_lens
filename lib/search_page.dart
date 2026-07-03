@@ -7,11 +7,65 @@ import 'download_service.dart';
 import 'search_models.dart';
 import 'search_url_codec.dart';
 import 'search_controller.dart';
-import 'search_components.dart'; // <-- Your single UI file
+import 'search_components.dart';
 
-// Add these near the top of search_page.dart
 final selectionModeProvider = StateProvider<bool>((ref) => false);
 final selectedItemsProvider = StateProvider<Set<SearchItem>>((ref) => {});
+
+class _FeatureCard extends StatefulWidget {
+  final IconData icon;
+  final String title;
+  final String description;
+  final double width;
+
+  const _FeatureCard({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.width,
+  });
+
+  @override
+  State<_FeatureCard> createState() => _FeatureCardState();
+}
+
+class _FeatureCardState extends State<_FeatureCard> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: widget.width,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: _hovered ? const Color(0xFF161616) : const Color(0xFF101010),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: _hovered ? const Color(0xFF3D7EFF).withValues(alpha: 0.5) : const Color(0xFF1E1E1E),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(widget.title,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Text(widget.description,
+                style: const TextStyle(
+                    color: Color(0xFF888888), fontSize: 13, height: 1.5)),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class SearchPage extends ConsumerStatefulWidget {
   const SearchPage({super.key});
@@ -25,15 +79,15 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
   bool _urlHydrated = false;
   bool _showQueryPreview = false;
-  bool? _isFiltersExpanded; // <-- ADD THIS LINE
+  bool? _isFiltersExpanded;
 
   static const _examples = [
     'Apollo 11',
-    'Black hole',
-    'Colosseum',
+    'Pride and Prejudice',
+    'Parks in Paris',
     'DNA helix',
-    'Hokusai',
-    'Solar system'
+    'Charlie Chaplin',
+    'Mitridate, Re di Ponto'
   ];
 
   @override
@@ -80,7 +134,6 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     final isSelectionMode = ref.watch(selectionModeProvider);
     final selectedItems = ref.watch(selectedItemsProvider);
 
-    // Magic: If we aren't selecting anything, the bar simply doesn't exist!
     if (!isSelectionMode) return const SizedBox.shrink();
 
     return Container(
@@ -93,10 +146,8 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         top: false,
         child: Row(
           children: [
-            // Cancel Selection Button
             ElevatedButton.icon(
               onPressed: () {
-                // Hitting cancel clears the items and turns off selection mode
                 ref.read(selectionModeProvider.notifier).state = false;
                 ref.read(selectedItemsProvider.notifier).state = {};
               },
@@ -109,7 +160,6 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             ),
             const Spacer(),
 
-            // Download Selected Button
             ElevatedButton.icon(
               onPressed: selectedItems.isEmpty
                   ? null
@@ -204,7 +254,6 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             ..remove(excludeName));
     }
 
-    // THE FIX: Trigger the actual network request instead of just updating the variable
     ref
         .read(searchControllerProvider.notifier)
         .search(next.queryText, overrideState: next);
@@ -230,9 +279,8 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     final session = viewState.activeSession;
     final filterState = viewState.filterState;
 
-    // DETECT MOBILE AND SET DEFAULT STATE
     final isMobile = MediaQuery.of(context).size.width < 600;
-    _isFiltersExpanded ??= !isMobile; // Open on desktop, closed on mobile
+    _isFiltersExpanded ??= !isMobile;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0B0B0B),
@@ -244,7 +292,6 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             onSearch: _search,
           ),
 
-          // MOBILE TOGGLE BUTTON
           InkWell(
             onTap: () =>
                 setState(() => _isFiltersExpanded = !_isFiltersExpanded!),
@@ -275,7 +322,6 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             ),
           ),
 
-          // ANIMATED CHIP WRAPPER
           AnimatedSize(
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeInOut,
@@ -304,40 +350,79 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
   Widget _buildLanding() {
     return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const WikiLogo(),
-              const SizedBox(height: 28),
-              const Text('Search all media from Wikimedia Commons',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                      letterSpacing: -0.4,
-                      height: 1.3)),
-              const SizedBox(height: 10),
-              const Text(
-                  'Images, vectors, audio, video, and documents — with format filters and advanced search controls.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      color: Color(0xFF505050), fontSize: 14, height: 1.6)),
-              const SizedBox(height: 32),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                alignment: WrapAlignment.center,
-                children: _examples
-                    .map((q) => ExampleChip(label: q, onTap: () => _search(q)))
-                    .toList(),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const WikiLogo(),
+            const SizedBox(height: 28),
+            const Text('CommonsLens Discovery Engine',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    letterSpacing: -0.5,
+                    height: 1.2)),
+            const SizedBox(height: 12),
+            const Text(
+                'A high-performance media discovery interface for the world\'s largest free media archive.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: Color(0xFFAAAAAA), fontSize: 16, height: 1.5)),
+            const SizedBox(height: 32),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: _examples
+                  .map((q) => ExampleChip(label: q, onTap: () => _search(q)))
+                  .toList(),
+            ),
+            const SizedBox(height: 64),
+            
+            // THE NEW FEATURE GRID
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 900),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final isMobile = constraints.maxWidth < 600;
+                  return Wrap(
+                    spacing: 24,
+                    runSpacing: 24,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      _FeatureCard(
+                        icon: Icons.travel_explore,
+                        title: 'Semantic Entity Search',
+                        description: 'Leverage Wikidata Q-codes to find conceptual matches and exact subjects, bypassing basic string overlaps. Match Depictions and Categories for powerful searching.',
+                        width: isMobile ? double.infinity : 400,
+                      ),
+                      _FeatureCard(
+                        icon: Icons.filter_alt_outlined,
+                        title: 'Advanced Metadata',
+                        description: 'Filter instantly by Creative Commons licenses, creation times, languages, geographical coordinates, and peer-reviewed quality assessments.',
+                        width: isMobile ? double.infinity : 400,
+                      ),
+                      _FeatureCard(
+                        icon: Icons.bolt,
+                        title: 'Native Hardware Rendering',
+                        description: 'Bypasses standard canvas limits to lazily load and decode massive archival images, videos, audios and documents with zero UI lockup.',
+                        width: isMobile ? double.infinity : 400,
+                      ),
+                      _FeatureCard(
+                        icon: Icons.archive_outlined,
+                        title: 'Client-Side Bulk Export',
+                        description: 'Select subsets of research data and compile in-memory .zip archives directly in the browser without server bottlenecks.',
+                        width: isMobile ? double.infinity : 400,
+                      ),
+                    ],
+                  );
+                },
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
