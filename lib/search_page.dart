@@ -396,7 +396,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                   const SizedBox(height: 32),
 
                   // Hero Copy
-                  const Text('CommonsLens Discovery Engine',
+                  const Text('CommonsLens',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                           fontSize: 42,
@@ -406,7 +406,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                           height: 1.1)),
                   const SizedBox(height: 16),
                   const Text(
-                      'A high-performance media discovery interface for the world\'s largest free media archive.\nEngineered specifically for scientists and researchers to navigate, filter, and extract massive datasets with zero UI lockup.',
+                      'A place to explore the world\'s largest free media archive.\nEngineered specifically for scientists and researchers to navigate, filter, and extract media intuitively and effortlessly.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                           color: Color(0xFFCCCCCC),
