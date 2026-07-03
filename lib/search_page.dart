@@ -84,7 +84,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   static const _examples = [
     'Apollo 11',
     'Pride and Prejudice',
-    'Parks in Paris',
+    'Berlin',
     'DNA helix',
     'Charlie Chaplin',
     'Mitridate, Re di Ponto'
