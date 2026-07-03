@@ -1,6 +1,7 @@
 import 'dart:html' as html;
 import 'dart:ui_web' as ui_web;
 import 'dart:ui';
+import 'download_service.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -422,11 +423,25 @@ class _NativeMediaRendererState extends State<_NativeMediaRenderer> {
     final isVideo = widget.item.mediaKind == MediaKind.video;
     final isAudio = widget.item.mediaKind == MediaKind.audio;
 
-    if (isVideo || isAudio || isPdf) {
+    // 1. Detect if it's an image or vector
+    final isImage = widget.item.mediaKind == MediaKind.image ||
+        widget.item.mediaKind == MediaKind.vector;
+
+    // 2. Add 'isImage' to the native HTML condition
+    if (isVideo || isAudio || isPdf || isImage) {
       _isNativeHtml = true;
 
       ui_web.platformViewRegistry.registerViewFactory(_viewId, (int viewId) {
-        if (isVideo) {
+        // 3. Render the native HTML <img> tag
+        if (isImage) {
+          return html.ImageElement()
+            ..src = widget.item.url
+            ..style.width = '100%'
+            ..style.height = '100%'
+            ..style.objectFit = 'contain' // Ensures the image isn't squashed
+            ..style.backgroundColor = 'transparent'
+            ..style.outline = 'none';
+        } else if (isVideo) {
           return html.VideoElement()
             ..src = widget.item.url
             ..controls = true
@@ -467,33 +482,7 @@ class _NativeMediaRendererState extends State<_NativeMediaRenderer> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.item.mediaKind == MediaKind.image ||
-        widget.item.mediaKind == MediaKind.vector) {
-      return InteractiveViewer(
-        minScale: 0.8,
-        maxScale: 6.0,
-        child: Center(
-          child: Image.network(
-            widget.item.url,
-            fit: BoxFit.contain,
-            loadingBuilder: (context, child, progress) {
-              if (progress == null) return child;
-              return Center(
-                child: CircularProgressIndicator(
-                  color: const Color(0xFF3D7EFF),
-                  value: progress.expectedTotalBytes != null
-                      ? progress.cumulativeBytesLoaded /
-                          (progress.expectedTotalBytes ?? 1)
-                      : null,
-                ),
-              );
-            },
-            errorBuilder: (_, __, ___) => _buildFallbackUI(widget.item),
-          ),
-        ),
-      );
-    }
-
+    // If it's an Image, Video, Audio, or PDF, it drops directly into this native view
     if (_isNativeHtml) {
       final isDesktop = MediaQuery.of(context).size.width >= 800;
       return Padding(
@@ -502,6 +491,7 @@ class _NativeMediaRendererState extends State<_NativeMediaRenderer> {
       );
     }
 
+    // Otherwise, show the fallback UI (for unknown files)
     return _buildFallbackUI(widget.item);
   }
 
@@ -760,11 +750,17 @@ class _DownloadSection extends StatelessWidget {
     required this.onLaunchCommons,
   });
 
-  Future<void> _handleDownload(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
+  Future<void> _handleDownload(BuildContext context, String url) async {
+    // Show a quick toast so the user knows the network request started
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Downloading media...'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+
+    // Call our custom forcing function
+    await DownloadService.downloadSingleFile(url, item.title, item.extension);
   }
 
   String _getResizedUrl(int width) {
@@ -779,7 +775,7 @@ class _DownloadSection extends StatelessWidget {
     return item.url;
   }
 
-  @override
+@override
   Widget build(BuildContext context) {
     final isScalable =
         item.mediaKind == MediaKind.image || item.mediaKind == MediaKind.vector;
@@ -788,7 +784,8 @@ class _DownloadSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ElevatedButton.icon(
-          onPressed: () => _handleDownload(item.url),
+          // Passed context here!
+          onPressed: () => _handleDownload(context, item.url),
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF3D7EFF),
             foregroundColor: Colors.white,
@@ -815,21 +812,24 @@ class _DownloadSection extends StatelessWidget {
               Expanded(
                 child: _SizeButton(
                   label: 'SMALL',
-                  onTap: () => _handleDownload(_getResizedUrl(640)),
+                  // Passed context here!
+                  onTap: () => _handleDownload(context, _getResizedUrl(640)),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: _SizeButton(
                   label: 'MEDIUM',
-                  onTap: () => _handleDownload(_getResizedUrl(1280)),
+                  // Passed context here!
+                  onTap: () => _handleDownload(context, _getResizedUrl(1280)),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: _SizeButton(
                   label: 'LARGE',
-                  onTap: () => _handleDownload(_getResizedUrl(1920)),
+                  // Passed context here!
+                  onTap: () => _handleDownload(context, _getResizedUrl(1920)),
                 ),
               ),
             ],

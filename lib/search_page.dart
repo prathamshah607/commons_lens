@@ -3,11 +3,15 @@ import 'package:commonslens/advanced_filters_drawer.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
+import 'download_service.dart';
 import 'search_models.dart';
 import 'search_url_codec.dart';
 import 'search_controller.dart';
 import 'search_components.dart'; // <-- Your single UI file
+
+// Add these near the top of search_page.dart
+final selectionModeProvider = StateProvider<bool>((ref) => false);
+final selectedItemsProvider = StateProvider<Set<SearchItem>>((ref) => {});
 
 class SearchPage extends ConsumerStatefulWidget {
   const SearchPage({super.key});
@@ -19,9 +23,9 @@ class SearchPage extends ConsumerStatefulWidget {
 class _SearchPageState extends ConsumerState<SearchPage> {
   final ScrollController _scrollController = ScrollController();
 
-
   bool _urlHydrated = false;
   bool _showQueryPreview = false;
+  bool? _isFiltersExpanded; // <-- ADD THIS LINE
 
   static const _examples = [
     'Apollo 11',
@@ -70,6 +74,59 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     if (pos.pixels >= pos.maxScrollExtent - 500) {
       ref.read(searchControllerProvider.notifier).loadMore();
     }
+  }
+
+  Widget _buildBulkActionBar(SearchSession session) {
+    final isSelectionMode = ref.watch(selectionModeProvider);
+    final selectedItems = ref.watch(selectedItemsProvider);
+
+    // Magic: If we aren't selecting anything, the bar simply doesn't exist!
+    if (!isSelectionMode) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: const BoxDecoration(
+        color: Color(0xFF131313),
+        border: Border(top: BorderSide(color: Color(0xFF202020))),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            // Cancel Selection Button
+            ElevatedButton.icon(
+              onPressed: () {
+                // Hitting cancel clears the items and turns off selection mode
+                ref.read(selectionModeProvider.notifier).state = false;
+                ref.read(selectedItemsProvider.notifier).state = {};
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2A2A2A),
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.close, size: 18),
+              label: const Text('Cancel'),
+            ),
+            const Spacer(),
+
+            // Download Selected Button
+            ElevatedButton.icon(
+              onPressed: selectedItems.isEmpty
+                  ? null
+                  : () {
+                      DownloadService.downloadBulkZip(selectedItems.toList(),
+                          zipName: 'selected_commons_media.zip');
+                    },
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF3D7EFF)),
+              icon: const Icon(Icons.download, size: 18, color: Colors.white),
+              label: Text('Download (${selectedItems.length})',
+                  style: const TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _search(String query) =>
@@ -148,7 +205,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     }
 
     // THE FIX: Trigger the actual network request instead of just updating the variable
-    ref.read(searchControllerProvider.notifier).search(next.queryText, overrideState: next);
+    ref
+        .read(searchControllerProvider.notifier)
+        .search(next.queryText, overrideState: next);
   }
 
   @override
@@ -171,6 +230,10 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     final session = viewState.activeSession;
     final filterState = viewState.filterState;
 
+    // DETECT MOBILE AND SET DEFAULT STATE
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    _isFiltersExpanded ??= !isMobile; // Open on desktop, closed on mobile
+
     return Scaffold(
       backgroundColor: const Color(0xFF0B0B0B),
       endDrawer: const AdvancedFiltersDrawer(),
@@ -180,14 +243,60 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             initialQuery: filterState.queryText,
             onSearch: _search,
           ),
-          _buildTabBar(filterState),
-          _buildFormatChips(filterState),
-          _buildActiveChipsBar(viewState.lastBuiltQuery),
-          _buildQueryPreviewBar(viewState.lastBuiltQuery, session.hasSearched),
+
+          // MOBILE TOGGLE BUTTON
+          InkWell(
+            onTap: () =>
+                setState(() => _isFiltersExpanded = !_isFiltersExpanded!),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    _isFiltersExpanded!
+                        ? "Hide FileType Filters"
+                        : "Show Filetype Filters",
+                    style: const TextStyle(
+                        color: Color(0xFF3D7EFF),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    _isFiltersExpanded!
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down,
+                    color: const Color(0xFF3D7EFF),
+                    size: 16,
+                  )
+                ],
+              ),
+            ),
+          ),
+
+          // ANIMATED CHIP WRAPPER
+          AnimatedSize(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOut,
+            child: _isFiltersExpanded!
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildTabBar(filterState),
+                      _buildFormatChips(filterState),
+                      _buildActiveChipsBar(viewState.lastBuiltQuery),
+                      _buildQueryPreviewBar(
+                          viewState.lastBuiltQuery, session.hasSearched),
+                    ],
+                  )
+                : const SizedBox.shrink(),
+          ),
           Expanded(
               child: session.hasSearched
                   ? _buildResults(session, filterState)
                   : _buildLanding()),
+          if (session.hasSearched) _buildBulkActionBar(session),
         ],
       ),
     );
@@ -276,10 +385,10 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 20),
             cacheExtent: 150,
             gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 210,
-                crossAxisSpacing: 5,
-                mainAxisSpacing: 5,
-                childAspectRatio: 1.25),
+                maxCrossAxisExtent: 280,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 0.85),
             itemCount: session.items.length + (session.loadingMore ? 1 : 0),
             itemBuilder: (context, i) {
               if (i == session.items.length)

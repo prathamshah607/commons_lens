@@ -1,9 +1,11 @@
+import 'package:commonslens/search_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/foundation.dart';
 import 'search_models.dart';
 import 'search_url_codec.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 // -----------------------------------------------------------------------------
 // Top Bar
@@ -219,7 +221,7 @@ class _ExampleChipState extends State<ExampleChip> {
 // Media Card Ecosystem
 // -----------------------------------------------------------------------------
 
-class MediaCard extends StatefulWidget {
+class MediaCard extends ConsumerStatefulWidget {
   final SearchItem item;
   final ValueNotifier<List<SearchItem>> searchResultsNotifier;
   final VoidCallback onLoadMore;
@@ -234,14 +236,32 @@ class MediaCard extends StatefulWidget {
     required this.index,
     required this.searchState,
   });
+
   @override
-  State<MediaCard> createState() => _MediaCardState();
+  ConsumerState<MediaCard> createState() => _MediaCardState();
 }
 
-class _MediaCardState extends State<MediaCard> {
+class _MediaCardState extends ConsumerState<MediaCard> {
   bool _hovered = false;
 
   Future<void> _handleTap() async {
+    // 1. Intercept tap if we are in selection mode
+    final isSelectionMode = ref.read(selectionModeProvider);
+    if (isSelectionMode) {
+      final selectedItems = ref.read(selectedItemsProvider);
+      final isSelected = selectedItems.contains(widget.item);
+
+      if (isSelected) {
+        ref.read(selectedItemsProvider.notifier).state = {...selectedItems}
+          ..remove(widget.item);
+      } else {
+        ref.read(selectedItemsProvider.notifier).state = {...selectedItems}
+          ..add(widget.item);
+      }
+      return;
+    }
+
+    // 2. Otherwise, normal navigation
     final params = <String, String>{
       'id': widget.item.title,
       ...SearchUrlCodec.toQueryParams(widget.searchState)
@@ -251,13 +271,18 @@ class _MediaCardState extends State<MediaCard> {
     context.push(uniqueUrl, extra: widget.index);
   }
 
-  Future<void> _copyUrl() async {
-    await Clipboard.setData(ClipboardData(text: widget.item.url));
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Media URL copied'), duration: Duration(seconds: 2)),
-      );
+  void _handleLongPress() {
+    final isSelectionMode = ref.read(selectionModeProvider);
+    
+    if (!isSelectionMode) {
+      // 1. Turn on selection mode
+      ref.read(selectionModeProvider.notifier).state = true;
+      
+      // 2. Add this specific item to the selection immediately
+      ref.read(selectedItemsProvider.notifier).state = {widget.item};
+      
+      // 3. Trigger a tiny physical buzz on mobile devices! (Requires flutter/services.dart)
+      HapticFeedback.lightImpact();
     }
   }
 
@@ -283,12 +308,16 @@ class _MediaCardState extends State<MediaCard> {
     final item = widget.item;
     final kind = item.mediaKind;
 
+    // Watch the selection state
+    final isSelectionMode = ref.watch(selectionModeProvider);
+    final isSelected = ref.watch(selectedItemsProvider).contains(item);
+
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
         onTap: _handleTap,
-        onLongPress: _copyUrl,
+        onLongPress: _handleLongPress,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 140),
           clipBehavior: Clip.antiAlias,
@@ -296,78 +325,81 @@ class _MediaCardState extends State<MediaCard> {
               color: const Color(0xFF131313),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                  color: _hovered
-                      ? const Color(0xFF3D7EFF).withValues(alpha: 0.55)
-                      : const Color(0xFF202020))),
-          child: Stack(
+                  // Draw a thick blue border if selected!
+                  width: isSelected ? 3 : 1,
+                  color: isSelected
+                      ? const Color(0xFF3D7EFF)
+                      : _hovered
+                          ? const Color(0xFF3D7EFF).withValues(alpha: 0.55)
+                          : const Color(0xFF202020))),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Positioned.fill(
-                  child: MediaPreview(item: item, index: widget.index)),
-              Positioned(
-                top: 8,
-                left: 8,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                  decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.55),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFF2A2A2A))),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(_iconForKind(kind),
-                          size: 12, color: const Color(0xFFCACACA)),
-                      const SizedBox(width: 5),
-                      Text(
-                          item.extension.isEmpty
-                              ? item.mime.toUpperCase()
-                              : item.extension.toUpperCase(),
-                          style: const TextStyle(
-                              color: Color(0xFFE0E0E0),
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.7)),
-                    ],
-                  ),
+              // 1. TOP SECTION: Image + Badge
+              Expanded(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    MediaPreview(item: item, index: widget.index),
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 5),
+                        decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.55),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: const Color(0xFF2A2A2A))),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(_iconForKind(kind),
+                                size: 12, color: const Color(0xFFCACACA)),
+                            const SizedBox(width: 5),
+                            Text(
+                                item.extension.isEmpty
+                                    ? item.mime.toUpperCase()
+                                    : item.extension.toUpperCase(),
+                                style: const TextStyle(
+                                    color: Color(0xFFE0E0E0),
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.7)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 140),
-                  padding: const EdgeInsets.fromLTRB(10, 22, 10, 10),
-                  decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                        Colors.black.withValues(alpha: _hovered ? 0.08 : 0.0),
-                        Colors.black.withValues(alpha: 0.82)
-                      ])),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(item.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w600,
-                              height: 1.25)),
-                      const SizedBox(height: 4),
-                      Text(item.snippet.isEmpty ? item.mime : item.snippet,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: Color(0xFFB0B0B0),
-                              fontSize: 11,
-                              height: 1.35)),
-                    ],
-                  ),
+
+              // 2. BOTTOM SECTION: Text Metadata
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: const BoxDecoration(
+                  border: Border(top: BorderSide(color: Color(0xFF202020))),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(item.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            height: 1.25)),
+                    const SizedBox(height: 4),
+                    Text(item.snippet.isEmpty ? item.mime : item.snippet,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Color(0xFFB0B0B0),
+                            fontSize: 11,
+                            height: 1.35)),
+                  ],
                 ),
               ),
             ],
