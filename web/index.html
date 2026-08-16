@@ -2,6 +2,24 @@
 <html lang="en">
 
 <head>
+  <script type="text/javascript">
+    // Single Page Apps for GitHub Pages — MIT License
+    // https://github.com/rafgraph/spa-github-pages
+    // Decodes the path that 404.html encoded, and hands it to go_router
+    // before the app boots, so deep links and reloads survive GitHub Pages'
+    // static hosting.
+    (function (l) {
+      if (l.search[1] === '/') {
+        var decoded = l.search.slice(1).split('&').map(function (s) {
+          return s.replace(/~and~/g, '&');
+        }).join('?');
+        window.history.replaceState(null, null,
+          l.pathname.slice(0, -1) + decoded + l.hash
+        );
+      }
+    }(window.location));
+  </script>
+
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-LBBV97ZD24"></script>
   <script>
     window.dataLayer = window.dataLayer || [];
@@ -13,6 +31,10 @@
   <base href="$FLUTTER_BASE_HREF">
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0B0B0B">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://prathamshah607.github.io/commons_lens/">
 
   <title>CommonsLens | A Free and Open Wikimedia Explorer</title>
   <meta name="description"
@@ -21,36 +43,82 @@
     content="Wikimedia Commons, Creative Commons, Public Domain, Image Search, Metadata, Wikidata, Open Source, Researcher Tool">
   <meta name="author" content="Pratham Shah">
 
+  <meta property="og:site_name" content="CommonsLens">
   <meta property="og:title" content="CommonsLens | Wikimedia Explorer">
   <meta property="og:description" content="Discover and filter Wikimedia Commons media with advanced metadata tools.">
   <meta property="og:type" content="website">
+  <meta property="og:locale" content="en_US">
   <meta property="og:url" content="https://prathamshah607.github.io/commons_lens/">
   <meta property="og:image" content="https://prathamshah607.github.io/commons_lens/favicon.png">
+  <meta property="og:image:alt" content="CommonsLens logo">
+
   <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="CommonsLens | Wikimedia Explorer">
+  <meta name="twitter:description"
+    content="Discover and filter Wikimedia Commons media with advanced metadata tools.">
+  <meta name="twitter:image" content="https://prathamshah607.github.io/commons_lens/favicon.png">
 
   <link rel="apple-touch-icon" href="favicon.png">
   <link rel="icon" type="image/png" href="favicon.png" />
   <link rel="shortcut icon" href="favicon.png">
-  
+
   <link rel="manifest" href="manifest.json">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "CommonsLens",
+    "url": "https://prathamshah607.github.io/commons_lens/",
+    "description": "Search millions of free-to-use images, videos, and documents from Wikimedia Commons with deep metadata filtering — license, subject (depicts), category, quality, geolocation, and date.",
+    "applicationCategory": "UtilitiesApplication",
+    "operatingSystem": "Any",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "author": {
+      "@type": "Person",
+      "name": "Pratham Shah"
+    },
+    "isAccessibleForFree": true
+  }
+  </script>
 </head>
 
 <body>
-  <div id="seo-fallback" style="display: none;">
-    <h1>Commonslens: Wikimedia Discovery Engine</h1>
-    <p>An advanced visual discovery engine for researchers, designers, and developers to explore Wikimedia Commons.</p>
+  <!--
+    Flutter web (CanvasKit) renders to a <canvas>, which is invisible to
+    crawlers that don't execute JS or that skip canvas contents. This block
+    is the real, load-bearing SEO content: it mirrors what the app actually
+    does, in plain indexable HTML. It's visually hidden (not display:none —
+    Google discounts display:none content) but present in the DOM and
+    accessible to screen readers, which keeps it legitimate progressive
+    enhancement rather than cloaking.
+  -->
+  <div id="seo-fallback" style="position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;">
+    <h1>CommonsLens: Wikimedia Commons Discovery Engine</h1>
+    <p>An advanced visual discovery engine for researchers, designers, and developers to explore Wikimedia Commons —
+      the world's largest library of free-to-use images, video, audio, and documents.</p>
 
     <h2>Features</h2>
     <ul>
-      <li>Semantic Search: Find media depicting specific subjects (e.g., Q146 for Cat).</li>
-      <li>License Filtering: Filter by CC0, CC BY-SA 4.0, and Public Domain rights.</li>
-      <li>Geolocation: Search for media coordinates using Latitude and Longitude.</li>
-      <li>Quality Assessment: Discover Featured Pictures, Quality Images, and Valued Images.</li>
+      <li>Semantic subject search ("depicts"): find media depicting a specific subject via Wikidata, with
+        multi-select include and exclude filtering.</li>
+      <li>Category search: filter and exclude by Wikimedia Commons category, including deep-category mode.</li>
+      <li>License filtering: CC0, CC BY 4.0, CC BY-SA 4.0, and Public Domain.</li>
+      <li>Quality assessment: Quality Images and Valued Images.</li>
+      <li>Geolocation search: find media near a given latitude and longitude.</li>
+      <li>Date filtering: creation date and last-edited date ranges.</li>
+      <li>File-type filtering: images, SVG/vector diagrams, audio, video, and documents.</li>
     </ul>
 
     <h2>About</h2>
-    <p>Powered by the CirrusSearch API and Wikidata, this tool provides a high-performance visual interface to execute
-      complex metadata queries without writing SQL.</p>
+    <p>CommonsLens is powered by the Wikimedia CirrusSearch API and Wikidata, providing a fast, high-performance
+      visual interface to run complex metadata queries against Wikimedia Commons without writing a query by hand.
+      It's free, open source, and built for researchers, journalists, educators, and developers who need
+      properly-licensed media.</p>
   </div>
 
   <script src="flutter_bootstrap.js" async></script>
