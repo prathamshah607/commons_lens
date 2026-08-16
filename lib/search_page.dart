@@ -224,6 +224,11 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       next = current.copyWith(
           categories: Set<String>.from(current.categories)
             ..remove(categoryName));
+    } else if (chip.id.startsWith('excludeCategory:')) {
+      final categoryName = chip.id.substring('excludeCategory:'.length);
+      next = current.copyWith(
+          excludeCategories: Set<String>.from(current.excludeCategories)
+            ..remove(categoryName));
     } else if (chip.id == 'titleOnly') {
       next = current.copyWith(titleOnly: false);
     } else if (chip.id == 'language') {
@@ -236,8 +241,16 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       next = current.copyWith(clearCreatedDate: true);
     } else if (chip.id == 'editedFrom' || chip.id == 'editedTo') {
       next = current.copyWith(clearEditedDate: true);
-    } else if (chip.id == 'depicts') {
-      next = current.copyWith(clearDepicts: true);
+    } else if (chip.id.startsWith('depicts:')) {
+      final qid = chip.id.substring('depicts:'.length);
+      next = current.copyWith(
+          depictsInclude: Set<DepictsEntity>.from(current.depictsInclude)
+            ..removeWhere((d) => d.qid == qid));
+    } else if (chip.id.startsWith('excludeDepicts:')) {
+      final qid = chip.id.substring('excludeDepicts:'.length);
+      next = current.copyWith(
+          depictsExclude: Set<DepictsEntity>.from(current.depictsExclude)
+            ..removeWhere((d) => d.qid == qid));
     } else if (chip.id == 'license') {
       next = current.copyWith(licensePreset: LicensePreset.any);
     } else if (chip.id == 'quality') {

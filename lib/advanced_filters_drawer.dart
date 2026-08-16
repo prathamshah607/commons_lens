@@ -24,7 +24,13 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
   late TextEditingController _lngCtrl;
   late TextEditingController _radiusCtrl;
 
-  Set<String> _selectedCategories = {};
+  Set<String> _categoriesInclude = {};
+  Set<String> _categoriesExclude = {};
+  bool _categoryExcludeMode = false;
+
+  Set<DepictsEntity> _depictsInclude = {};
+  Set<DepictsEntity> _depictsExclude = {};
+  bool _depictsExcludeMode = false;
 
   late TextEditingController _langCtrl;
   late TextEditingController _modelCtrl;
@@ -49,7 +55,10 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
     _radiusCtrl = TextEditingController(
         text: state.nearCoord?.radiusKm.toString() ?? '10');
 
-    _selectedCategories = Set.from(state.categories);
+    _categoriesInclude = Set.from(state.categories);
+    _categoriesExclude = Set.from(state.excludeCategories);
+    _depictsInclude = Set.from(state.depictsInclude);
+    _depictsExclude = Set.from(state.depictsExclude);
 
     _langCtrl = TextEditingController(text: state.languageCode ?? '');
     _modelCtrl = TextEditingController(text: state.contentModel ?? '');
@@ -88,7 +97,6 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
       coordFilter = NearCoordFilter(lat: lat, lng: lng, radiusKm: rad);
     }
 
-    final cats = _selectedCategories;
     final lang = _langCtrl.text.trim().isEmpty ? null : _langCtrl.text.trim();
     final model =
         _modelCtrl.text.trim().isEmpty ? null : _modelCtrl.text.trim();
@@ -113,7 +121,10 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
       clearMinHeight: h == null,
       nearCoord: coordFilter,
       clearNearCoord: coordFilter == null,
-      categories: cats,
+      categories: _categoriesInclude,
+      excludeCategories: _categoriesExclude,
+      depictsInclude: _depictsInclude,
+      depictsExclude: _depictsExclude,
       languageCode: lang,
       clearLanguageCode: lang == null,
       contentModel: model,
@@ -168,87 +179,115 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
                 children: [
 
                   _buildSectionHeader('DEPICTS (SUBJECT)'),
-                  Autocomplete<DepictsEntity>(
-                    displayStringForOption: (option) => option.label,
-                    initialValue:
-                        TextEditingValue(text: state.depicts?.label ?? ''),
-                    optionsBuilder: (TextEditingValue textEditingValue) async {
-                      if (textEditingValue.text.isEmpty)
-                        return const Iterable<DepictsEntity>.empty();
-                      return await _service
-                          .searchDepictsEntities(textEditingValue.text);
-                    },
-                    onSelected: (DepictsEntity selection) {
-                      final nextState = state.copyWith(depicts: selection);
-                      ref.read(searchControllerProvider.notifier).search(
-                          nextState.queryText,
-                          overrideState: nextState);
-                    },
-                    fieldViewBuilder:
-                        (context, controller, focusNode, onEditingComplete) {
-                      return TextField(
-                        keyboardType: (kIsWeb &&
-                                (defaultTargetPlatform == TargetPlatform.iOS ||
-                                    defaultTargetPlatform ==
-                                        TargetPlatform.android))
-                            ? TextInputType.text
-                            : TextInputType.url,
-                        controller: controller,
-                        focusNode: focusNode,
-                        style: const TextStyle(color: Colors.white),
-                        decoration: _inputDecoration().copyWith(
-                          hintText: 'e.g. Cat, Eiffel Tower...',
-                          suffixIcon: state.depicts != null
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear,
-                                      color: Colors.white54, size: 18),
-                                  onPressed: () {
-                                    controller.clear();
-                                    final nextState =
-                                        state.copyWith(clearDepicts: true);
-                                    ref
-                                        .read(searchControllerProvider.notifier)
-                                        .search(nextState.queryText,
-                                            overrideState: nextState);
-                                  },
-                                )
-                              : null,
+                  if (_depictsInclude.isNotEmpty || _depictsExclude.isNotEmpty) ...[
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        ..._depictsInclude.map((d) => _buildFilterChip(
+                              label: d.label,
+                              excluded: false,
+                              onDeleted: () =>
+                                  setState(() => _depictsInclude.remove(d)),
+                            )),
+                        ..._depictsExclude.map((d) => _buildFilterChip(
+                              label: d.label,
+                              excluded: true,
+                              onDeleted: () =>
+                                  setState(() => _depictsExclude.remove(d)),
+                            )),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Autocomplete<DepictsEntity>(
+                          displayStringForOption: (option) => option.label,
+                          optionsBuilder:
+                              (TextEditingValue textEditingValue) async {
+                            if (textEditingValue.text.isEmpty) {
+                              return const Iterable<DepictsEntity>.empty();
+                            }
+                            return await _service
+                                .searchDepictsEntities(textEditingValue.text);
+                          },
+                          onSelected: (DepictsEntity selection) {
+                            setState(() {
+                              if (_depictsExcludeMode) {
+                                _depictsInclude.remove(selection);
+                                _depictsExclude.add(selection);
+                              } else {
+                                _depictsExclude.remove(selection);
+                                _depictsInclude.add(selection);
+                              }
+                            });
+                          },
+                          fieldViewBuilder: (context, controller, focusNode,
+                              onEditingComplete) {
+                            return TextField(
+                              keyboardType: (kIsWeb &&
+                                      (defaultTargetPlatform ==
+                                              TargetPlatform.iOS ||
+                                          defaultTargetPlatform ==
+                                              TargetPlatform.android))
+                                  ? TextInputType.text
+                                  : TextInputType.url,
+                              controller: controller,
+                              focusNode: focusNode,
+                              style: const TextStyle(color: Colors.white),
+                              decoration: _inputDecoration().copyWith(
+                                hintText: _depictsExcludeMode
+                                    ? 'Exclude subject...'
+                                    : 'e.g. Cat, Eiffel Tower...',
+                              ),
+                              onSubmitted: (_) => controller.clear(),
+                            );
+                          },
+                          optionsViewBuilder: (context, onSelected, options) {
+                            return Align(
+                              alignment: Alignment.topLeft,
+                              child: Material(
+                                color: const Color(0xFF1E1E1E),
+                                elevation: 4,
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                      maxHeight: 200, maxWidth: 300),
+                                  child: ListView.builder(
+                                    padding: EdgeInsets.zero,
+                                    shrinkWrap: true,
+                                    itemCount: options.length,
+                                    itemBuilder: (context, index) {
+                                      final option = options.elementAt(index);
+                                      return ListTile(
+                                        title: Text(option.label,
+                                            style: const TextStyle(
+                                                color: Colors.white)),
+                                        subtitle: option.description != null
+                                            ? Text(option.description!,
+                                                style: const TextStyle(
+                                                    color: Colors.white54,
+                                                    fontSize: 11))
+                                            : null,
+                                        onTap: () => onSelected(option),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
                         ),
-                      );
-                    },
-                    optionsViewBuilder: (context, onSelected, options) {
-                      return Align(
-                        alignment: Alignment.topLeft,
-                        child: Material(
-                          color: const Color(0xFF1E1E1E),
-                          elevation: 4,
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(
-                                maxHeight: 200, maxWidth: 300),
-                            child: ListView.builder(
-                              padding: EdgeInsets.zero,
-                              shrinkWrap: true,
-                              itemCount: options.length,
-                              itemBuilder: (context, index) {
-                                final option = options.elementAt(index);
-                                return ListTile(
-                                  title: Text(option.label,
-                                      style:
-                                          const TextStyle(color: Colors.white)),
-                                  subtitle: option.description != null
-                                      ? Text(option.description!,
-                                          style: const TextStyle(
-                                              color: Colors.white54,
-                                              fontSize: 11))
-                                      : null,
-                                  onTap: () => onSelected(option),
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-                      );
-                    },
+                      ),
+                      const SizedBox(width: 10),
+                      _buildExcludeModeToggle(
+                        excludeMode: _depictsExcludeMode,
+                        onChanged: (val) =>
+                            setState(() => _depictsExcludeMode = val),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 24),
 
@@ -297,99 +336,131 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
                   const SizedBox(height: 24),
 
                   _buildSectionHeader('CATEGORIES'),
-                  if (_selectedCategories.isNotEmpty) ...[
+                  if (_categoriesInclude.isNotEmpty ||
+                      _categoriesExclude.isNotEmpty) ...[
                     Wrap(
                       spacing: 6,
                       runSpacing: 6,
-                      children: _selectedCategories
-                          .map((c) => Chip(
-                                label: Text(c,
-                                    style: const TextStyle(
-                                        color: Colors.white, fontSize: 11)),
-                                backgroundColor: const Color(0xFF222222),
-                                deleteIconColor: Colors.white54,
-                                side: BorderSide.none,
-                                onDeleted: () => setState(
-                                    () => _selectedCategories.remove(c)),
-                              ))
-                          .toList(),
+                      children: [
+                        ..._categoriesInclude.map((c) => _buildFilterChip(
+                              label: c,
+                              excluded: false,
+                              onDeleted: () =>
+                                  setState(() => _categoriesInclude.remove(c)),
+                            )),
+                        ..._categoriesExclude.map((c) => _buildFilterChip(
+                              label: c,
+                              excluded: true,
+                              onDeleted: () =>
+                                  setState(() => _categoriesExclude.remove(c)),
+                            )),
+                      ],
                     ),
                     const SizedBox(height: 12),
                   ],
-                  Autocomplete<String>(
-                    optionsBuilder: (textEditingValue) async {
-                      if (textEditingValue.text.isEmpty)
-                        return const Iterable<String>.empty();
-                      return await _service
-                          .searchCategories(textEditingValue.text);
-                    },
-                    onSelected: (String selection) {
-                      setState(() => _selectedCategories.add(selection));
-                    },
-                    fieldViewBuilder:
-                        (context, controller, focusNode, onEditingComplete) {
-                      return TextField(
-                        keyboardType: (kIsWeb &&
-                                (defaultTargetPlatform == TargetPlatform.iOS ||
-                                    defaultTargetPlatform ==
-                                        TargetPlatform.android))
-                            ? TextInputType.text
-                            : TextInputType.url,
-                        controller: controller,
-                        focusNode: focusNode,
-                        style: const TextStyle(color: Colors.white),
-                        decoration: _inputDecoration().copyWith(
-                          hintText: 'Search categories...',
-                          suffixIcon: IconButton(
-                            icon: const Icon(Icons.add,
-                                color: Colors.white54, size: 18),
-                            onPressed: () {
-                              if (controller.text.isNotEmpty) {
-                                setState(() => _selectedCategories
-                                    .add(controller.text.trim()));
-                                controller.clear();
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Autocomplete<String>(
+                          optionsBuilder: (textEditingValue) async {
+                            if (textEditingValue.text.isEmpty) {
+                              return const Iterable<String>.empty();
+                            }
+                            return await _service
+                                .searchCategories(textEditingValue.text);
+                          },
+                          onSelected: (String selection) {
+                            setState(() {
+                              if (_categoryExcludeMode) {
+                                _categoriesInclude.remove(selection);
+                                _categoriesExclude.add(selection);
+                              } else {
+                                _categoriesExclude.remove(selection);
+                                _categoriesInclude.add(selection);
                               }
-                            },
-                          ),
+                            });
+                          },
+                          fieldViewBuilder: (context, controller, focusNode,
+                              onEditingComplete) {
+                            void addFromField() {
+                              final val = controller.text.trim();
+                              if (val.isEmpty) return;
+                              setState(() {
+                                if (_categoryExcludeMode) {
+                                  _categoriesInclude.remove(val);
+                                  _categoriesExclude.add(val);
+                                } else {
+                                  _categoriesExclude.remove(val);
+                                  _categoriesInclude.add(val);
+                                }
+                              });
+                              controller.clear();
+                            }
+
+                            return TextField(
+                              keyboardType: (kIsWeb &&
+                                      (defaultTargetPlatform ==
+                                              TargetPlatform.iOS ||
+                                          defaultTargetPlatform ==
+                                              TargetPlatform.android))
+                                  ? TextInputType.text
+                                  : TextInputType.url,
+                              controller: controller,
+                              focusNode: focusNode,
+                              style: const TextStyle(color: Colors.white),
+                              decoration: _inputDecoration().copyWith(
+                                hintText: _categoryExcludeMode
+                                    ? 'Exclude category...'
+                                    : 'Search categories...',
+                                suffixIcon: IconButton(
+                                  icon: const Icon(Icons.add,
+                                      color: Colors.white54, size: 18),
+                                  onPressed: addFromField,
+                                ),
+                              ),
+                              onSubmitted: (_) => addFromField(),
+                            );
+                          },
+                          optionsViewBuilder: (context, onSelected, options) {
+                            return Align(
+                              alignment: Alignment.topLeft,
+                              child: Material(
+                                color: const Color(0xFF1E1E1E),
+                                elevation: 4,
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                      maxHeight: 200, maxWidth: 360),
+                                  child: ListView.builder(
+                                    padding: EdgeInsets.zero,
+                                    shrinkWrap: true,
+                                    itemCount: options.length,
+                                    itemBuilder: (context, index) {
+                                      final option = options.elementAt(index);
+                                      return ListTile(
+                                        title: Text(option,
+                                            style: const TextStyle(
+                                                color: Colors.white)),
+                                        onTap: () {
+                                          onSelected(option);
+                                          FocusScope.of(context).unfocus();
+                                        },
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
                         ),
-                        onSubmitted: (val) {
-                          if (val.isNotEmpty) {
-                            setState(() => _selectedCategories.add(val.trim()));
-                            controller.clear();
-                          }
-                        },
-                      );
-                    },
-                    optionsViewBuilder: (context, onSelected, options) {
-                      return Align(
-                        alignment: Alignment.topLeft,
-                        child: Material(
-                          color: const Color(0xFF1E1E1E),
-                          elevation: 4,
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(
-                                maxHeight: 200, maxWidth: 360),
-                            child: ListView.builder(
-                              padding: EdgeInsets.zero,
-                              shrinkWrap: true,
-                              itemCount: options.length,
-                              itemBuilder: (context, index) {
-                                final option = options.elementAt(index);
-                                return ListTile(
-                                  title: Text(option,
-                                      style:
-                                          const TextStyle(color: Colors.white)),
-                                  onTap: () {
-                                    onSelected(option);
-                                    FocusScope.of(context).unfocus();
-                                  },
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-                      );
-                    },
+                      ),
+                      const SizedBox(width: 10),
+                      _buildExcludeModeToggle(
+                        excludeMode: _categoryExcludeMode,
+                        onChanged: (val) =>
+                            setState(() => _categoryExcludeMode = val),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 24),
 
@@ -617,6 +688,91 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
           fontSize: 10,
           fontWeight: FontWeight.w700,
           letterSpacing: 1.5,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterChip({
+    required String label,
+    required bool excluded,
+    required VoidCallback onDeleted,
+  }) {
+    return Chip(
+      label: Text(
+        excluded ? '− $label' : label,
+        style: TextStyle(
+          color: excluded ? const Color(0xFFFF6B6B) : Colors.white,
+          fontSize: 11,
+        ),
+      ),
+      backgroundColor: excluded
+          ? const Color(0xFF2A1414)
+          : const Color(0xFF222222),
+      deleteIconColor: excluded ? const Color(0xFFFF6B6B) : Colors.white54,
+      side: excluded
+          ? const BorderSide(color: Color(0xFF4A2020))
+          : BorderSide.none,
+      onDeleted: onDeleted,
+    );
+  }
+
+  Widget _buildExcludeModeToggle({
+    required bool excludeMode,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      padding: const EdgeInsets.all(3),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _toggleSegment(
+            label: '+',
+            selected: !excludeMode,
+            color: const Color(0xFF3D7EFF),
+            onTap: () => onChanged(false),
+          ),
+          _toggleSegment(
+            label: '−',
+            selected: excludeMode,
+            color: const Color(0xFFFF6B6B),
+            onTap: () => onChanged(true),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _toggleSegment({
+    required String label,
+    required bool selected,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 32,
+        height: 32,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? color.withOpacity(0.2) : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: selected ? color : Colors.transparent,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? color : Colors.white38,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
         ),
       ),
     );

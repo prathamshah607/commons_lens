@@ -25,6 +25,22 @@ class SearchUrlCodec {
       if (cats.isNotEmpty) params['cats'] = cats.join('|');
     }
 
+    if (state.excludeCategories.isNotEmpty) {
+      final cats = state.excludeCategories.map((c) => c.trim()).where((c) => c.isNotEmpty).toList()
+        ..sort();
+      if (cats.isNotEmpty) params['catsExclude'] = cats.join('|');
+    }
+
+    if (state.depictsInclude.isNotEmpty) {
+      final entries = state.depictsInclude.map((d) => '${d.qid}~${d.label}').toList()..sort();
+      params['depictsIn'] = entries.join('|');
+    }
+
+    if (state.depictsExclude.isNotEmpty) {
+      final entries = state.depictsExclude.map((d) => '${d.qid}~${d.label}').toList()..sort();
+      params['depictsEx'] = entries.join('|');
+    }
+
     if (state.deepCategoryMode) params['deepcat'] = '1';
     if (state.titleOnly) params['titleOnly'] = '1';
     if (state.localOnly) params['local'] = '1';
@@ -47,6 +63,35 @@ class SearchUrlCodec {
 
     if (state.sortMode != SortMode.relevance) {
       params['sort'] = state.sortMode.name;
+    }
+
+    if (state.licensePreset != LicensePreset.any) {
+      params['license'] = state.licensePreset.name;
+    }
+
+    if (state.qualityFilter != QualityFilter.any) {
+      params['quality'] = state.qualityFilter.name;
+    }
+
+    if (state.minWidth != null && state.minWidth! > 0) {
+      params['minW'] = state.minWidth.toString();
+    }
+
+    if (state.minHeight != null && state.minHeight! > 0) {
+      params['minH'] = state.minHeight.toString();
+    }
+
+    if (state.nearCoord != null) {
+      final coord = state.nearCoord!;
+      params['lat'] = coord.lat.toString();
+      params['lng'] = coord.lng.toString();
+      params['radius'] = coord.radiusKm.toString();
+    }
+
+    if (state.excludeTerms.isNotEmpty) {
+      final terms = state.excludeTerms.map((t) => t.trim()).where((t) => t.isNotEmpty).toList()
+        ..sort();
+      if (terms.isNotEmpty) params['exclude'] = terms.join('|');
     }
 
     return params;
@@ -85,6 +130,26 @@ class SearchUrlCodec {
         ? <String>{}
         : catsParam.split('|').map((c) => c.trim()).where((c) => c.isNotEmpty).toSet();
 
+    final catsExcludeParam = params['catsExclude'];
+    final excludeCategories = (catsExcludeParam == null || catsExcludeParam.isEmpty)
+        ? <String>{}
+        : catsExcludeParam.split('|').map((c) => c.trim()).where((c) => c.isNotEmpty).toSet();
+
+    Set<DepictsEntity> parseDepicts(String? raw) {
+      if (raw == null || raw.isEmpty) return <DepictsEntity>{};
+      return raw.split('|').where((e) => e.isNotEmpty).map((entry) {
+        final sep = entry.indexOf('~');
+        if (sep < 0) return DepictsEntity(qid: entry, label: entry);
+        return DepictsEntity(
+          qid: entry.substring(0, sep),
+          label: entry.substring(sep + 1),
+        );
+      }).toSet();
+    }
+
+    final depictsInclude = parseDepicts(params['depictsIn']);
+    final depictsExclude = parseDepicts(params['depictsEx']);
+
     final createdFrom = params['createdFrom'];
     final createdTo = params['createdTo'];
     final createdDate = (createdFrom == null && createdTo == null)
@@ -105,11 +170,45 @@ class SearchUrlCodec {
             orElse: () => SortMode.relevance,
           );
 
+    final licenseParam = params['license'];
+    final licensePreset = licenseParam == null
+        ? base.licensePreset
+        : LicensePreset.values.firstWhere(
+            (l) => l.name == licenseParam,
+            orElse: () => base.licensePreset,
+          );
+
+    final qualityParam = params['quality'];
+    final qualityFilter = qualityParam == null
+        ? base.qualityFilter
+        : QualityFilter.values.firstWhere(
+            (q) => q.name == qualityParam,
+            orElse: () => base.qualityFilter,
+          );
+
+    final minWidth = int.tryParse(params['minW'] ?? '');
+    final minHeight = int.tryParse(params['minH'] ?? '');
+
+    final lat = double.tryParse(params['lat'] ?? '');
+    final lng = double.tryParse(params['lng'] ?? '');
+    final radius = double.tryParse(params['radius'] ?? '') ?? 10.0;
+    final nearCoord = (lat != null && lng != null)
+        ? NearCoordFilter(lat: lat, lng: lng, radiusKm: radius)
+        : null;
+
+    final excludeParam = params['exclude'];
+    final excludeTerms = (excludeParam == null || excludeParam.isEmpty)
+        ? <String>{}
+        : excludeParam.split('|').map((t) => t.trim()).where((t) => t.isNotEmpty).toSet();
+
     return base.copyWith(
       queryText: params['q'] ?? base.queryText,
       tab: tab,
       formats: formats,
       categories: categories,
+      excludeCategories: excludeCategories,
+      depictsInclude: depictsInclude,
+      depictsExclude: depictsExclude,
       deepCategoryMode: params['deepcat'] == '1',
       titleOnly: params['titleOnly'] == '1',
       localOnly: params['local'] == '1',
@@ -118,6 +217,15 @@ class SearchUrlCodec {
       createdDate: createdDate,
       editedDate: editedDate,
       sortMode: sortMode,
+      licensePreset: licensePreset,
+      qualityFilter: qualityFilter,
+      minWidth: minWidth,
+      clearMinWidth: minWidth == null,
+      minHeight: minHeight,
+      clearMinHeight: minHeight == null,
+      nearCoord: nearCoord,
+      clearNearCoord: nearCoord == null,
+      excludeTerms: excludeTerms,
     );
   }
 

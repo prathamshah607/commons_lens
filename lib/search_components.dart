@@ -298,8 +298,6 @@ class _MediaCardState extends ConsumerState<MediaCard> {
     final item = widget.item;
     final kind = item.mediaKind;
 
-    // Watch the selection state
-    final isSelectionMode = ref.watch(selectionModeProvider);
     final isSelected = ref.watch(selectedItemsProvider).contains(item);
 
     return MouseRegion(
@@ -347,15 +345,12 @@ class _MediaCardState extends ConsumerState<MediaCard> {
                             Icon(_iconForKind(kind),
                                 size: 12, color: const Color(0xFFCACACA)),
                             const SizedBox(width: 5),
-                            Text(
-                                item.extension.isEmpty
-                                    ? item.mime.toUpperCase()
-                                    : item.extension.toUpperCase(),
-                                style: const TextStyle(
-                                    color: Color(0xFFE0E0E0),
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 0.7)),
+                            Text(item.fileTypeLabel,
+                              style: const TextStyle(
+                                color: Color(0xFFE0E0E0),
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.7)),
                           ],
                         ),
                       ),

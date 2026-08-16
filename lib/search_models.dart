@@ -164,7 +164,9 @@ class SearchState {
   final QualityFilter qualityFilter;
   final int? minWidth;
   final int? minHeight;
-  final DepictsEntity? depicts;
+  final Set<DepictsEntity> depictsInclude;
+  final Set<DepictsEntity> depictsExclude;
+  final Set<String> excludeCategories;
   final NearCoordFilter? nearCoord;
   final Set<String> excludeTerms;
 
@@ -185,7 +187,9 @@ class SearchState {
     this.qualityFilter = QualityFilter.any,
     this.minWidth,
     this.minHeight,
-    this.depicts,
+    this.depictsInclude = const {},
+    this.depictsExclude = const {},
+    this.excludeCategories = const {},
     this.nearCoord,
     this.excludeTerms = const {},
   });
@@ -207,7 +211,9 @@ class SearchState {
     QualityFilter? qualityFilter,
     int? minWidth,
     int? minHeight,
-    DepictsEntity? depicts,
+    Set<DepictsEntity>? depictsInclude,
+    Set<DepictsEntity>? depictsExclude,
+    Set<String>? excludeCategories,
     NearCoordFilter? nearCoord,
     Set<String>? excludeTerms,
     bool clearLanguageCode = false,
@@ -216,7 +222,6 @@ class SearchState {
     bool clearEditedDate = false,
     bool clearMinWidth = false,
     bool clearMinHeight = false,
-    bool clearDepicts = false,
     bool clearNearCoord = false,
   }) {
     return SearchState(
@@ -240,7 +245,9 @@ class SearchState {
       qualityFilter: qualityFilter ?? this.qualityFilter,
       minWidth: clearMinWidth ? null : (minWidth ?? this.minWidth),
       minHeight: clearMinHeight ? null : (minHeight ?? this.minHeight),
-      depicts: clearDepicts ? null : (depicts ?? this.depicts),
+      depictsInclude: depictsInclude ?? this.depictsInclude,
+      depictsExclude: depictsExclude ?? this.depictsExclude,
+      excludeCategories: excludeCategories ?? this.excludeCategories,
       nearCoord: clearNearCoord ? null : (nearCoord ?? this.nearCoord),
       excludeTerms: excludeTerms ?? this.excludeTerms,
     );
@@ -461,12 +468,57 @@ class SearchItem {
   });
 
   String get extension {
-    final lower = url.toLowerCase();
-    final parts = lower.split('.');
-    if (parts.length > 1) {
-      return parts.last;
+    final path = Uri.tryParse(url)?.path;
+
+    if (path != null && path.isNotEmpty) {
+      final fileName = path.split('/').last;
+      final dotIndex = fileName.lastIndexOf('.');
+
+      if (dotIndex > 0 && dotIndex < fileName.length - 1) {
+        return fileName.substring(dotIndex + 1).toLowerCase();
+      }
     }
-    return '';
+
+    final cleanUrl = url.split('?').first.split('#').first;
+    final dotIndex = cleanUrl.lastIndexOf('.');
+
+    return dotIndex >= 0 && dotIndex < cleanUrl.length - 1
+        ? cleanUrl.substring(dotIndex + 1).toLowerCase()
+        : '';
+  }
+
+  String get fileTypeLabel {
+    switch (mime.toLowerCase()) {
+      case 'image/jpeg':
+      case 'image/jpg':
+        return 'JPG';
+      case 'image/png':
+        return 'PNG';
+      case 'image/gif':
+        return 'GIF';
+      case 'image/webp':
+        return 'WEBP';
+      case 'image/svg+xml':
+        return 'SVG';
+      case 'image/tiff':
+        return 'TIFF';
+      case 'application/pdf':
+        return 'PDF';
+      case 'image/vnd.djvu':
+      case 'application/vnd.djvu':
+        return 'DJVU';
+      case 'audio/ogg':
+        return 'OGG';
+      case 'audio/wav':
+      case 'audio/x-wav':
+        return 'WAV';
+      case 'video/webm':
+        return 'WEBM';
+      case 'video/mp4':
+        return 'MP4';
+    }
+
+    return extension.isEmpty ? mime.toUpperCase() : extension.toUpperCase();
   }
 
   MediaKind get mediaKind {

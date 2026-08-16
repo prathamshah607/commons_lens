@@ -240,6 +240,19 @@ class SearchService {
       }
     }
 
+    for (final category in state.excludeCategories.toList()..sort()) {
+      final safe = category.trim();
+      if (safe.isEmpty) continue;
+
+      if (state.deepCategoryMode) {
+        parts.add('-deepcat:"$safe"');
+        chips.add(QueryChipData(id: 'excludeCategory:$safe', label: 'Not in deep category: $safe'));
+      } else {
+        parts.add('-incategory:"$safe"');
+        chips.add(QueryChipData(id: 'excludeCategory:$safe', label: 'Not in category: $safe'));
+      }
+    }
+
     if (state.languageCode != null && state.languageCode!.trim().isNotEmpty) {
       final lang = state.languageCode!.trim();
       parts.add('inlanguage:$lang');
@@ -318,12 +331,21 @@ class SearchService {
       ));
     }
 
-    if (state.depicts != null) {
-      final entity = state.depicts!;
+    for (final entity in state.depictsInclude.toList()
+      ..sort((a, b) => a.qid.compareTo(b.qid))) {
       parts.add('haswbstatement:P180=${entity.qid}');
       chips.add(QueryChipData(
-        id: 'depicts',
+        id: 'depicts:${entity.qid}',
         label: 'Depicts: ${entity.label}',
+      ));
+    }
+
+    for (final entity in state.depictsExclude.toList()
+      ..sort((a, b) => a.qid.compareTo(b.qid))) {
+      parts.add('-haswbstatement:P180=${entity.qid}');
+      chips.add(QueryChipData(
+        id: 'excludeDepicts:${entity.qid}',
+        label: 'Not depicting: ${entity.label}',
       ));
     }
 
@@ -379,7 +401,9 @@ class SearchService {
       'quality=${state.qualityFilter.name}',
       'minW=${state.minWidth ?? ""}',
       'minH=${state.minHeight ?? ""}',
-      'depicts=${state.depicts?.qid ?? ""}',
+      'excludeCategories=${(state.excludeCategories.toList()..sort()).join(",")}',
+      'depictsInclude=${(state.depictsInclude.map((e) => e.qid).toList()..sort()).join(",")}',
+      'depictsExclude=${(state.depictsExclude.map((e) => e.qid).toList()..sort()).join(",")}',
       'near=${state.nearCoord != null ? "${state.nearCoord!.lat},${state.nearCoord!.lng},${state.nearCoord!.radiusKm}" : ""}',
       'exclude=${(state.excludeTerms.toList()..sort()).join(",")}',
     ].join('|');
