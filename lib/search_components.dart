@@ -217,6 +217,7 @@ class MediaCard extends ConsumerStatefulWidget {
   final VoidCallback onLoadMore;
   final int index;
   final SearchState searchState;
+  final Map<String, String> extraParams;
 
   const MediaCard({
     super.key,
@@ -225,6 +226,7 @@ class MediaCard extends ConsumerStatefulWidget {
     required this.onLoadMore,
     required this.index,
     required this.searchState,
+    this.extraParams = const {},
   });
 
   @override
@@ -254,7 +256,8 @@ class _MediaCardState extends ConsumerState<MediaCard> {
     // 2. Otherwise, normal navigation
     final params = <String, String>{
       'id': widget.item.title,
-      ...SearchUrlCodec.toQueryParams(widget.searchState)
+      ...SearchUrlCodec.toQueryParams(widget.searchState),
+      ...widget.extraParams,
     };
     final uniqueUrl = Uri(path: '/view', queryParameters: params).toString();
 

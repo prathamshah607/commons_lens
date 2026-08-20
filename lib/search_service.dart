@@ -378,6 +378,103 @@ class SearchService {
     );
   }
 
+  /// Paginated list of everything a single uploader has contributed, via
+  /// MediaWiki's `list=allimages&aiuser=` — a purpose-built, natively
+  /// paginated index of one user's uploads. Deliberately separate from
+  /// `_fetchSingle`: this isn't a CirrusSearch query, it's a different API
+  /// module with its own (flat, non-generator) response shape.
+  Future<SearchResponse?> fetchAuthorImages(
+    String username, {
+    Map<String, dynamic>? continueParams,
+  }) async {
+    final user = username.trim();
+    if (user.isEmpty) return null;
+
+    try {
+      final params = <String, String>{
+        'action': 'query',
+        'format': 'json',
+        'origin': '*',
+        'list': 'allimages',
+        'aiuser': user,
+        'aisort': 'timestamp',
+        'aidir': 'older', // newest uploads first
+        'ailimit': '$pageSize',
+        'aiprop': 'timestamp|user|url|size|dimensions|mime|extmetadata|canonicaltitle',
+        'aiurlwidth': '320',
+      };
+
+      if (continueParams != null) {
+        for (final entry in continueParams.entries) {
+          params[entry.key] = entry.value.toString();
+        }
+      }
+
+      final uri = Uri.https('commons.wikimedia.org', '/w/api.php', params);
+
+      final response = await _client.get(uri, headers: {
+        'Api-User-Agent': 'CommonslensApp/1.0 (Flutter Web)',
+      }).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode != 200) return null;
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final nextContinue = data['continue'] as Map<String, dynamic>?;
+      final images = (data['query']?['allimages'] as List?) ?? [];
+
+      final items = <SearchItem>[];
+      for (final raw in images) {
+        final info = raw as Map<String, dynamic>;
+        final mime = (info['mime'] as String? ?? '').toLowerCase();
+        final isSvg = mime == 'image/svg+xml';
+
+        final thumburl = info['thumburl'] as String? ?? '';
+        final originalUrl = info['url'] as String? ?? '';
+        final thumb = thumburl.isNotEmpty ? thumburl : originalUrl;
+        if (originalUrl.isEmpty) continue;
+
+        final canonicalTitle = info['canonicaltitle'] as String? ?? '';
+        final name = info['name'] as String? ?? '';
+        final rawTitle =
+            canonicalTitle.isNotEmpty ? canonicalTitle : 'File:$name';
+
+        final ext = info['extmetadata'] as Map<String, dynamic>? ?? {};
+        final artistHtml = ext['Artist']?['value']?.toString() ?? '';
+        final licenseShort = ext['LicenseShortName']?['value']?.toString() ?? '';
+        final licenseUrl = ext['LicenseUrl']?['value']?.toString() ?? '';
+        final dateTimeOriginal =
+            ext['DateTimeOriginal']?['value']?.toString() ?? '';
+
+        final uploader = info['user']?.toString() ?? user;
+        final width = info['width'] as int? ?? 0;
+        final height = info['height'] as int? ?? 0;
+
+        items.add(SearchItem(
+          title: rawTitle.replaceFirst('File:', ''),
+          url: originalUrl,
+          thumb: thumb,
+          commonsUrl:
+              'https://commons.wikimedia.org/wiki/${Uri.encodeComponent(rawTitle)}',
+          snippet: rawTitle,
+          mime: mime,
+          isSvg: isSvg,
+          timestamp: info['timestamp'] as String?,
+          artistHtml: artistHtml,
+          licenseShortName: licenseShort,
+          licenseUrl: licenseUrl,
+          dateTimeOriginal: dateTimeOriginal,
+          uploader: uploader,
+          width: width,
+          height: height,
+        ));
+      }
+
+      return SearchResponse(items: items, continueParams: nextContinue);
+    } catch (_) {
+      return null;
+    }
+  }
+
   String buildQuerySignature(SearchState state) {
     final built = buildQuery(state);
     final formats = state.formats.map((f) => f.name).toList()..sort();
@@ -409,7 +506,80 @@ class SearchService {
     ].join('|');
   }
 
+  /// "hrithik roshan + shahid kapoor" cannot be expressed as a single
+  /// CirrusSearch query — see the note above buildQuery. So instead: split
+  /// on "+", run each segment as its own fully independent search (with
+  /// every other filter — category, depicts, license, format, etc. — still
+  /// applied identically to each), then merge and dedupe client-side. This
+  /// nests naturally with the format fan-out in [_fetchPageForQuery] below:
+  /// each segment's own request still fans out per selected format there.
   Future<SearchResponse?> fetchPage(
+    SearchState state, {
+    required Map<String, dynamic>? continueParams,
+  }) async {
+    final queryText = state.queryText.trim();
+    final segments = queryText
+        .split(RegExp(r'\s+\+\s+'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+
+    if (segments.length <= 1) {
+      return _fetchPageForQuery(state, continueParams: continueParams);
+    }
+
+    final streams = <String, List<SearchItem>>{};
+    final newMultiContinue = <String, dynamic>{};
+    bool anySuccess = false;
+
+    final segmentTokens = continueParams?['_query'] as Map<String, dynamic>?;
+    final futures = <Future<void>>[];
+
+    for (final segment in segments) {
+      // Once a segment runs out of pages (no continuation token left for
+      // it), stop re-fetching it on subsequent loadMore calls.
+      if (continueParams != null &&
+          segmentTokens != null &&
+          !segmentTokens.containsKey(segment)) {
+        continue;
+      }
+
+      final segmentContinue = segmentTokens?[segment] as Map<String, dynamic>?;
+      final segmentState = state.copyWith(queryText: segment);
+
+      futures.add(() async {
+        final result = await _fetchPageForQuery(segmentState,
+            continueParams: segmentContinue);
+        if (result != null) {
+          anySuccess = true;
+          streams[segment] = result.items;
+          if (result.continueParams != null) {
+            newMultiContinue[segment] = result.continueParams;
+          }
+        }
+      }());
+    }
+
+    await Future.wait(futures);
+
+    if (!anySuccess) return null;
+
+    final interleaved = _multiSort<String>(streams, state.sortMode);
+    final seen = <String>{};
+    final deduped = <SearchItem>[];
+    for (final item in interleaved) {
+      // Same file can genuinely match more than one segment; keep it once.
+      if (seen.add(item.url)) deduped.add(item);
+    }
+
+    return SearchResponse(
+      items: deduped,
+      continueParams:
+          newMultiContinue.isNotEmpty ? {'_query': newMultiContinue} : null,
+    );
+  }
+
+  Future<SearchResponse?> _fetchPageForQuery(
     SearchState state, {
     required Map<String, dynamic>? continueParams,
   }) async {
@@ -579,7 +749,7 @@ class SearchService {
     }
   }
 
-  List<SearchItem> _multiSort(Map<FileFormat, List<SearchItem>> streams, SortMode mode) {
+  List<SearchItem> _multiSort<K>(Map<K, List<SearchItem>> streams, SortMode mode) {
     final result = <SearchItem>[];
 
     if (mode == SortMode.relevance) {

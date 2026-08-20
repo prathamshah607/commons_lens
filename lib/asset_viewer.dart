@@ -42,6 +42,7 @@ class _AssetViewerState extends ConsumerState<AssetViewer> {
   bool _isStandalone = false;
   SearchItem? _injectedTarget;
   bool _isFetchingInjected = false;
+  String? _authorName;
 
   @override
   void initState() {
@@ -67,8 +68,14 @@ class _AssetViewerState extends ConsumerState<AssetViewer> {
     if (!_urlHydrated) {
       _urlHydrated = true;
       final params = GoRouterState.of(context).uri.queryParameters;
+      final author = params['author']?.trim();
 
-      if (SearchUrlCodec.hasSearchContext(params)) {
+      if (author != null && author.isNotEmpty) {
+        // Gallery source is the author-portfolio provider (see
+        // _getCombinedItems); nothing to hydrate up front, it loads itself
+        // on first watch.
+        _authorName = author;
+      } else if (SearchUrlCodec.hasSearchContext(params)) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
 
@@ -132,8 +139,14 @@ class _AssetViewerState extends ConsumerState<AssetViewer> {
   }
 
   List<SearchItem> _getCombinedItems() {
-    final session = ref.watch(searchControllerProvider).activeSession;
-    final gallery = _isStandalone ? <SearchItem>[] : session.items;
+    List<SearchItem> gallery;
+    if (_authorName != null) {
+      gallery = ref.watch(authorPortfolioProvider(_authorName!)).items;
+    } else if (_isStandalone) {
+      gallery = const <SearchItem>[];
+    } else {
+      gallery = ref.watch(searchControllerProvider).activeSession.items;
+    }
 
     List<SearchItem> items = List.from(gallery);
 
@@ -163,7 +176,13 @@ class _AssetViewerState extends ConsumerState<AssetViewer> {
     }
 
     if (!_isStandalone && index >= totalLength - 3) {
-      ref.read(searchControllerProvider.notifier).loadMore();
+      if (_authorName != null) {
+        ref
+            .read(authorPortfolioProvider(_authorName!).notifier)
+            .loadMore(_authorName!);
+      } else {
+        ref.read(searchControllerProvider.notifier).loadMore();
+      }
     }
 
     final items = _getCombinedItems();
@@ -195,10 +214,16 @@ class _AssetViewerState extends ConsumerState<AssetViewer> {
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(searchControllerProvider).activeSession;
+    final portfolioSession =
+        _authorName != null ? ref.watch(authorPortfolioProvider(_authorName!)) : null;
     final items = _getCombinedItems();
 
     final isLoading = (_isStandalone && _isFetchingInjected) ||
-        (!_isStandalone && session.loading && items.isEmpty);
+        (portfolioSession != null && portfolioSession.loading && items.isEmpty) ||
+        (_authorName == null &&
+            !_isStandalone &&
+            session.loading &&
+            items.isEmpty);
 
     if (isLoading) {
       return const Scaffold(
@@ -600,7 +625,7 @@ class _MetadataInspector extends StatelessWidget {
         _buildPropertyRow('DIMENSIONS', dimensions),
         _buildPropertyRow('AUTHOR / CREATOR', cleanArtist),
         _buildPropertyRow('DATE ORIGINAL', item.dateTimeOriginal),
-        _buildPropertyRow('UPLOADER', item.uploader),
+        _buildUploaderRow(context, item.uploader),
         _buildPropertyRow('UPLOAD TIMESTAMP', item.timestamp ?? ''),
         _buildLicenseRow(
           context,
@@ -689,6 +714,60 @@ class _MetadataInspector extends StatelessWidget {
                 fontWeight: FontWeight.w500,
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUploaderRow(BuildContext context, String uploader) {
+    if (uploader.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'UPLOADER',
+            style: TextStyle(
+              color: Color(0xFF666666),
+              fontSize: 10,
+              letterSpacing: 1.5,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: SelectableText(
+                  uploader,
+                  style: const TextStyle(
+                    color: Color(0xFFE0E0E0),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => context.push(
+                  Uri(path: '/author', queryParameters: {'name': uploader})
+                      .toString(),
+                ),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF7AABFF),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                icon: const Icon(Icons.person_search_rounded, size: 15),
+                label: const Text('Portfolio',
+                    style:
+                        TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
         ],
       ),
     );

@@ -51,12 +51,13 @@ class SearchController extends Notifier<SearchViewState> {
         SearchUrlCodec.fromQueryParams(params, const SearchState());
     _invalidateSessionKey();
 
+    final built = _service.buildQuery(nextFilter);
     state = state.copyWith(
       filterState: nextFilter,
-      lastBuiltQuery: _service.buildQuery(nextFilter),
+      lastBuiltQuery: built,
     );
 
-    if (nextFilter.queryText.isNotEmpty) {
+    if (built.srsearch.trim().isNotEmpty) {
       search(nextFilter.queryText);
     } else {
       state = state.copyWith(activeSession: _getSession(nextFilter));
@@ -69,10 +70,14 @@ class SearchController extends Notifier<SearchViewState> {
     }
 
     final cleanQuery = query.trim();
-    if (cleanQuery.isEmpty) return;
-
     final generation = ++_searchGeneration;
     final nextFilter = state.filterState.copyWith(queryText: cleanQuery);
+    final built = _service.buildQuery(nextFilter);
+
+    // A search with no free-text query is still valid if filters alone
+    // (depicts, category, license, etc.) produce a non-empty CirrusSearch
+    // query — e.g. just "haswbstatement:P180=Q123" for depicts-only.
+    if (built.srsearch.trim().isEmpty) return;
 
     _invalidateSessionKey();
 
@@ -87,7 +92,7 @@ class SearchController extends Notifier<SearchViewState> {
 
     state = state.copyWith(
       filterState: nextFilter,
-      lastBuiltQuery: _service.buildQuery(nextFilter),
+      lastBuiltQuery: built,
       activeSession: loadingSession,
     );
 
@@ -120,9 +125,7 @@ class SearchController extends Notifier<SearchViewState> {
 
   Future<void> loadMore() async {
     final currentSession = state.activeSession;
-    if (currentSession.loadingMore ||
-        !currentSession.hasMore ||
-        state.filterState.queryText.isEmpty) {
+    if (currentSession.loadingMore || !currentSession.hasMore) {
       return;
     }
 
@@ -168,13 +171,14 @@ class SearchController extends Notifier<SearchViewState> {
     if (nextFilter == state.filterState) return;
 
     _invalidateSessionKey();
+    final built = _service.buildQuery(nextFilter);
     state = state.copyWith(
       filterState: nextFilter,
-      lastBuiltQuery: _service.buildQuery(nextFilter),
+      lastBuiltQuery: built,
       activeSession: _getSession(nextFilter),
     );
 
-    if (nextFilter.queryText.trim().isNotEmpty) {
+    if (built.srsearch.trim().isNotEmpty) {
       search(nextFilter.queryText);
     }
   }
@@ -182,5 +186,78 @@ class SearchController extends Notifier<SearchViewState> {
   void saveScrollOffset(double offset) {
     _updateSession(
         state.filterState, state.activeSession.copyWith(scrollOffset: offset));
+  }
+}
+
+/// Paginated session for a single uploader's portfolio (list=allimages),
+/// keyed by username. Deliberately kept separate from [SearchController]:
+/// it's not a CirrusSearch session, has no SearchState/filters, and its
+/// own continuation tokens — but it reuses the exact same [SearchSession]
+/// shape, so it drops into the same grid/pagination UI unchanged.
+final authorPortfolioProvider =
+    NotifierProvider.family<AuthorPortfolioController, SearchSession, String>(
+        AuthorPortfolioController.new);
+
+class AuthorPortfolioController extends FamilyNotifier<SearchSession, String> {
+  final SearchService _service = SearchService();
+  int _generation = 0;
+
+  @override
+  SearchSession build(String username) {
+    _loadInitial(username);
+    return const SearchSession(hasSearched: true, loading: true);
+  }
+
+  Future<void> _loadInitial(String username) async {
+    final generation = ++_generation;
+    final result = await _service.fetchAuthorImages(username);
+    if (generation != _generation) return;
+
+    if (result == null) {
+      state = state.copyWith(
+        loading: false,
+        error: 'Could not load this uploader\'s portfolio.',
+      );
+      return;
+    }
+
+    state = state.copyWith(
+      items: result.items,
+      continueParams: result.continueParams,
+      hasMore: result.continueParams != null,
+      loading: false,
+    );
+  }
+
+  Future<void> loadMore(String username) async {
+    if (state.loadingMore || !state.hasMore) return;
+
+    final generation = _generation;
+    state = state.copyWith(loadingMore: true);
+
+    final result = await _service.fetchAuthorImages(
+      username,
+      continueParams: state.continueParams,
+    );
+
+    if (generation != _generation) return;
+
+    if (result == null) {
+      state = state.copyWith(loadingMore: false);
+      return;
+    }
+
+    final existingUrls = state.items.map((e) => e.url).toSet();
+    final merged = [
+      ...state.items,
+      ...result.items.where((item) => !existingUrls.contains(item.url)),
+    ];
+
+    state = state.copyWith(
+      items: merged,
+      continueParams: result.continueParams,
+      hasMore: result.continueParams != null,
+      loadingMore: false,
+    );
   }
 }

@@ -1,0 +1,206 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import 'download_service.dart';
+import 'search_models.dart';
+import 'search_controller.dart';
+import 'search_components.dart';
+import 'search_page.dart' show selectionModeProvider, selectedItemsProvider;
+
+class AuthorPortfolioPage extends ConsumerStatefulWidget {
+  final String username;
+
+  const AuthorPortfolioPage({super.key, required this.username});
+
+  @override
+  ConsumerState<AuthorPortfolioPage> createState() =>
+      _AuthorPortfolioPageState();
+}
+
+class _AuthorPortfolioPageState extends ConsumerState<AuthorPortfolioPage> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    if (pos.pixels >= pos.maxScrollExtent - 500) {
+      ref
+          .read(authorPortfolioProvider(widget.username).notifier)
+          .loadMore(widget.username);
+    }
+  }
+
+  Widget _buildBulkActionBar() {
+    final isSelectionMode = ref.watch(selectionModeProvider);
+    final selectedItems = ref.watch(selectedItemsProvider);
+    if (!isSelectionMode) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: const BoxDecoration(
+        color: Color(0xFF131313),
+        border: Border(top: BorderSide(color: Color(0xFF202020))),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            ElevatedButton.icon(
+              onPressed: () {
+                ref.read(selectionModeProvider.notifier).state = false;
+                ref.read(selectedItemsProvider.notifier).state = {};
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2A2A2A),
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.close, size: 18),
+              label: const Text('Cancel'),
+            ),
+            const Spacer(),
+            ElevatedButton.icon(
+              onPressed: selectedItems.isEmpty
+                  ? null
+                  : () {
+                      DownloadService.downloadBulkZip(
+                        selectedItems.toList(),
+                        zipName: '${widget.username}_portfolio.zip',
+                      );
+                    },
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF3D7EFF)),
+              icon: const Icon(Icons.download, size: 18, color: Colors.white),
+              label: Text('Download (${selectedItems.length})',
+                  style: const TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final session = ref.watch(authorPortfolioProvider(widget.username));
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF0B0B0B),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0B0B0B),
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+        leading: IconButton(
+          icon: const Icon(Icons.close, color: Colors.white),
+          onPressed: () =>
+              context.canPop() ? context.pop() : context.go('/'),
+        ),
+        title: Text(
+          widget.username,
+          style: const TextStyle(
+              color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700),
+        ),
+        centerTitle: true,
+      ),
+      body: Column(
+        children: [
+          Expanded(child: _buildBody(session)),
+          _buildBulkActionBar(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBody(SearchSession session) {
+    if (session.loading && session.items.isEmpty) {
+      return const Center(
+        child: SizedBox(
+          width: 22,
+          height: 22,
+          child:
+              CircularProgressIndicator(strokeWidth: 1.5, color: Color(0xFF3D7EFF)),
+        ),
+      );
+    }
+    if (session.error != null && session.items.isEmpty) {
+      return Center(
+        child: Text(session.error!,
+            style: const TextStyle(color: Color(0xFF484848), fontSize: 14)),
+      );
+    }
+    if (session.items.isEmpty) {
+      return Center(
+        child: Text('No uploads found for "${widget.username}".',
+            style: const TextStyle(color: Color(0xFF404040), fontSize: 14)),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 6),
+          child: Text(
+            '${session.items.length} UPLOAD${session.items.length == 1 ? '' : 'S'}'
+            '${session.hasMore ? '+' : ''}',
+            style: const TextStyle(
+                color: Color(0xFF323232),
+                fontSize: 10,
+                letterSpacing: 2,
+                fontWeight: FontWeight.w600),
+          ),
+        ),
+        Expanded(
+          child: GridView.builder(
+            controller: _scrollController,
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 20),
+            cacheExtent: 150,
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 280,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 0.85),
+            itemCount: session.items.length + (session.loadingMore ? 1 : 0),
+            itemBuilder: (context, i) {
+              if (i == session.items.length) {
+                return const Center(
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 1.5, color: Color(0xFF3D7EFF)),
+                  ),
+                );
+              }
+              return RepaintBoundary(
+                key: ValueKey(session.items[i].url),
+                child: MediaCard(
+                  item: session.items[i],
+                  searchResultsNotifier: ValueNotifier(session.items),
+                  onLoadMore: () => ref
+                      .read(authorPortfolioProvider(widget.username).notifier)
+                      .loadMore(widget.username),
+                  index: i,
+                  searchState: const SearchState(),
+                  extraParams: {'author': widget.username},
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
