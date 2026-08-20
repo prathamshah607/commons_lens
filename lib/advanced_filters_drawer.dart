@@ -27,10 +27,12 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
   Set<String> _categoriesInclude = {};
   Set<String> _categoriesExclude = {};
   bool _categoryExcludeMode = false;
+  TextEditingController? _categoryFieldController;
 
   Set<DepictsEntity> _depictsInclude = {};
   Set<DepictsEntity> _depictsExclude = {};
   bool _depictsExcludeMode = false;
+  TextEditingController? _depictsFieldController;
 
   late TextEditingController _langCtrl;
   late TextEditingController _modelCtrl;
@@ -224,9 +226,16 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
                                 _depictsInclude.add(selection);
                               }
                             });
+                            // Autocomplete auto-fills the field with the
+                            // selected label and leaves it there — fine for
+                            // single-select, but blocks typing the next
+                            // entry in multi-select. Clear it so the box is
+                            // ready for the next search immediately.
+                            _depictsFieldController?.clear();
                           },
                           fieldViewBuilder: (context, controller, focusNode,
                               onEditingComplete) {
+                            _depictsFieldController = controller;
                             return TextField(
                               keyboardType: (kIsWeb &&
                                       (defaultTargetPlatform ==
@@ -380,9 +389,15 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
                                 _categoriesInclude.add(selection);
                               }
                             });
+                            // Same fix as depicts: Autocomplete leaves the
+                            // selected label in the field after a dropdown
+                            // tap. The manual "+"/Enter path already clears
+                            // below; the dropdown-tap path needs it too.
+                            _categoryFieldController?.clear();
                           },
                           fieldViewBuilder: (context, controller, focusNode,
                               onEditingComplete) {
+                            _categoryFieldController = controller;
                             void addFromField() {
                               final val = controller.text.trim();
                               if (val.isEmpty) return;
