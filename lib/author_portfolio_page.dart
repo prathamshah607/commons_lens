@@ -20,6 +20,8 @@ class AuthorPortfolioPage extends ConsumerStatefulWidget {
 
 class _AuthorPortfolioPageState extends ConsumerState<AuthorPortfolioPage> {
   final ScrollController _scrollController = ScrollController();
+  late final TextEditingController _authorCtrl =
+      TextEditingController(text: widget.username);
 
   @override
   void initState() {
@@ -28,9 +30,31 @@ class _AuthorPortfolioPageState extends ConsumerState<AuthorPortfolioPage> {
   }
 
   @override
+  void didUpdateWidget(covariant AuthorPortfolioPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.username != widget.username) {
+      _authorCtrl.text = widget.username;
+      // Switching authors — a bulk selection from the previous grid
+      // shouldn't silently carry over into the new one.
+      ref.read(selectionModeProvider.notifier).state = false;
+      ref.read(selectedItemsProvider.notifier).state = {};
+    }
+  }
+
+  @override
   void dispose() {
+    _authorCtrl.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _submitAuthorSearch() {
+    final name = _authorCtrl.text.trim();
+    if (name.isEmpty || name == widget.username) return;
+    // authorPortfolioProvider is keyed by username, so navigating here just
+    // rebuilds this same page watching a different family instance — no
+    // extra state plumbing needed, GoRouter + Riverpod already do the work.
+    context.go(Uri(path: '/author', queryParameters: {'name': name}).toString());
   }
 
   void _onScroll() {
@@ -41,6 +65,48 @@ class _AuthorPortfolioPageState extends ConsumerState<AuthorPortfolioPage> {
           .read(authorPortfolioProvider(widget.username).notifier)
           .loadMore(widget.username);
     }
+  }
+
+  Widget _buildAuthorSearchBar() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      decoration: const BoxDecoration(
+        color: Color(0xFF101010),
+        border: Border(bottom: BorderSide(color: Color(0xFF1C1C1C))),
+      ),
+      child: SizedBox(
+        height: 38,
+        child: TextField(
+          controller: _authorCtrl,
+          textInputAction: TextInputAction.search,
+          autocorrect: false,
+          enableSuggestions: false,
+          style: const TextStyle(fontSize: 14, color: Colors.white),
+          decoration: InputDecoration(
+            hintText: 'Search uploads by author username…',
+            hintStyle: const TextStyle(color: Color(0xFF3A3A3A), fontSize: 14),
+            filled: true,
+            fillColor: const Color(0xFF181818),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(6),
+                borderSide: BorderSide.none),
+            focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(6),
+                borderSide: const BorderSide(color: Color(0xFF3D7EFF), width: 1)),
+            prefixIcon: const Icon(Icons.person_search_rounded,
+                size: 18, color: Color(0xFF3A3A3A)),
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.arrow_forward_rounded,
+                  size: 18, color: Color(0xFF3D7EFF)),
+              onPressed: _submitAuthorSearch,
+            ),
+          ),
+          onSubmitted: (_) => _submitAuthorSearch(),
+        ),
+      ),
+    );
   }
 
   Widget _buildBulkActionBar() {
@@ -107,15 +173,19 @@ class _AuthorPortfolioPageState extends ConsumerState<AuthorPortfolioPage> {
           onPressed: () =>
               context.canPop() ? context.pop() : context.go('/'),
         ),
-        title: Text(
-          widget.username,
-          style: const TextStyle(
-              color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700),
+        title: const Text(
+          'AUTHOR PORTFOLIO',
+          style: TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              letterSpacing: 1.5,
+              fontWeight: FontWeight.w700),
         ),
         centerTitle: true,
       ),
       body: Column(
         children: [
+          _buildAuthorSearchBar(),
           Expanded(child: _buildBody(session)),
           _buildBulkActionBar(),
         ],

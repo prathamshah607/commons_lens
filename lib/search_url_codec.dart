@@ -230,6 +230,12 @@ class SearchUrlCodec {
   }
 
   static bool hasSearchContext(Map<String, String> params) {
-    return (params['q'] ?? '').trim().isNotEmpty;
+    // Any param besides "id" means this /view link came from an actual
+    // search session (query text OR filters alone — depicts/category/etc.
+    // are valid searches with no "q" present) and should restore full
+    // gallery pagination. Only a bare "id" with nothing else is a genuine
+    // standalone direct link.
+    final relevant = Map<String, String>.from(params)..remove('id');
+    return relevant.isNotEmpty;
   }
 }

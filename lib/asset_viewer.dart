@@ -48,18 +48,16 @@ class _AssetViewerState extends ConsumerState<AssetViewer> {
   void initState() {
     super.initState();
 
-    final session = ref.read(searchControllerProvider).activeSession;
-    final targetId = _normalizedTitle(widget.fileId);
-    int startIndex = session.items
-        .indexWhere((it) => _normalizedTitle(it.title) == targetId);
-
-    _currentIndex = startIndex >= 0 ? startIndex : 0;
-    _pageController = PageController(initialPage: _currentIndex);
-
     _focusNode = FocusNode();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focusNode.requestFocus();
     });
+    // _pageController and _currentIndex are set in didChangeDependencies —
+    // computing the correct starting index needs GoRouterState.of(context),
+    // which Flutter does not allow calling from initState() (it depends on
+    // an InheritedWidget lookup that isn't valid until after initState
+    // completes). didChangeDependencies is the earliest safe place, and it
+    // always runs before the first build(), so `late` here is safe.
   }
 
   @override
@@ -87,6 +85,21 @@ class _AssetViewerState extends ConsumerState<AssetViewer> {
         _isStandalone = true;
         _fetchInjectedTarget();
       }
+
+      // Now that _authorName is resolved, find the tapped image's index in
+      // the correct source — matching _getCombinedItems()'s branching —
+      // instead of always reading the main search session regardless of
+      // mode, which is what caused every author-page tap to open on page 0.
+      final initialItems = _authorName != null
+          ? ref.read(authorPortfolioProvider(_authorName!)).items
+          : ref.read(searchControllerProvider).activeSession.items;
+
+      final targetId = _normalizedTitle(widget.fileId);
+      final startIndex = initialItems
+          .indexWhere((it) => _normalizedTitle(it.title) == targetId);
+
+      _currentIndex = startIndex >= 0 ? startIndex : 0;
+      _pageController = PageController(initialPage: _currentIndex);
     }
   }
 

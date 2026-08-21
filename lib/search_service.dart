@@ -383,6 +383,11 @@ class SearchService {
   /// paginated index of one user's uploads. Deliberately separate from
   /// `_fetchSingle`: this isn't a CirrusSearch query, it's a different API
   /// module with its own (flat, non-generator) response shape.
+  /// Manually builds a Commons-standard thumbnail URL from a full-resolution
+  /// original, e.g. .../commons/a/a9/File.jpg -> .../commons/thumb/a/a9/File.jpg/320px-File.jpg
+  /// Used as a fallback for when the API doesn't hand back `thumburl` (see
+  /// note on fetchAuthorImages) — so a missing thumbnail never means silently
+  /// loading the full-res original as a grid preview.
   Future<SearchResponse?> fetchAuthorImages(
     String username, {
     Map<String, dynamic>? continueParams,
@@ -391,7 +396,13 @@ class SearchService {
     if (user.isEmpty) return null;
 
     try {
-      final params = <String, String>{
+      // Step 1: just the ordered list of this user's uploads — titles and
+      // timestamps only, no thumbnail request here. list=allimages' own
+      // aiurlwidth-based thumbnail scaling has a documented history of
+      // being unreliable (phabricator.wikimedia.org/T109125 — thumburl
+      // silently missing for some/all entries in a batch), which is what
+      // was causing the full-res/placeholder issues.
+      final listParams = <String, String>{
         'action': 'query',
         'format': 'json',
         'origin': '*',
@@ -400,43 +411,89 @@ class SearchService {
         'aisort': 'timestamp',
         'aidir': 'older', // newest uploads first
         'ailimit': '$pageSize',
-        'aiprop': 'timestamp|user|url|size|dimensions|mime|extmetadata|canonicaltitle',
-        'aiurlwidth': '320',
+        'aiprop': 'timestamp|canonicaltitle',
       };
 
       if (continueParams != null) {
         for (final entry in continueParams.entries) {
-          params[entry.key] = entry.value.toString();
+          listParams[entry.key] = entry.value.toString();
         }
       }
 
-      final uri = Uri.https('commons.wikimedia.org', '/w/api.php', params);
-
-      final response = await _client.get(uri, headers: {
+      final listUri = Uri.https('commons.wikimedia.org', '/w/api.php', listParams);
+      final listResponse = await _client.get(listUri, headers: {
         'Api-User-Agent': 'CommonslensApp/1.0 (Flutter Web)',
       }).timeout(const Duration(seconds: 15));
 
-      if (response.statusCode != 200) return null;
+      if (listResponse.statusCode != 200) return null;
 
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final nextContinue = data['continue'] as Map<String, dynamic>?;
-      final images = (data['query']?['allimages'] as List?) ?? [];
+      final listData = jsonDecode(listResponse.body) as Map<String, dynamic>;
+      final nextContinue = listData['continue'] as Map<String, dynamic>?;
+      final images = (listData['query']?['allimages'] as List?) ?? [];
 
-      final items = <SearchItem>[];
+      if (images.isEmpty) {
+        return SearchResponse(items: const [], continueParams: nextContinue);
+      }
+
+      final orderedTitles = <String>[];
+      final timestamps = <String, String>{};
       for (final raw in images) {
         final info = raw as Map<String, dynamic>;
-        final mime = (info['mime'] as String? ?? '').toLowerCase();
-        final isSvg = mime == 'image/svg+xml';
-
-        final thumburl = info['thumburl'] as String? ?? '';
-        final originalUrl = info['url'] as String? ?? '';
-        final thumb = thumburl.isNotEmpty ? thumburl : originalUrl;
-        if (originalUrl.isEmpty) continue;
-
         final canonicalTitle = info['canonicaltitle'] as String? ?? '';
         final name = info['name'] as String? ?? '';
-        final rawTitle =
-            canonicalTitle.isNotEmpty ? canonicalTitle : 'File:$name';
+        final title = canonicalTitle.isNotEmpty ? canonicalTitle : 'File:$name';
+        orderedTitles.add(title);
+        final ts = info['timestamp'] as String?;
+        if (ts != null) timestamps[title] = ts;
+      }
+
+      // Step 2: batch-fetch thumbnails/metadata for exactly these titles via
+      // prop=imageinfo — the same call shape _fetchSingle and the main
+      // search already use, which is the one that actually loads fast.
+      final infoParams = <String, String>{
+        'action': 'query',
+        'format': 'json',
+        'origin': '*',
+        'titles': orderedTitles.join('|'),
+        'prop': 'imageinfo',
+        'iiprop': 'url|size|mime|extmetadata|user|dimensions',
+        'iiurlwidth': '320',
+      };
+
+      final infoUri = Uri.https('commons.wikimedia.org', '/w/api.php', infoParams);
+      final infoResponse = await _client.get(infoUri, headers: {
+        'Api-User-Agent': 'CommonslensApp/1.0 (Flutter Web)',
+      }).timeout(const Duration(seconds: 15));
+
+      if (infoResponse.statusCode != 200) return null;
+
+      final infoData = jsonDecode(infoResponse.body) as Map<String, dynamic>;
+      final pages = (infoData['query']?['pages'] as Map<String, dynamic>?) ?? {};
+
+      // pages is keyed by pageid with no guaranteed order — index by title
+      // so we can rebuild the newest-first order from step 1.
+      final byTitle = <String, Map<String, dynamic>>{};
+      for (final page in pages.values) {
+        final p = page as Map<String, dynamic>;
+        final t = p['title'] as String?;
+        if (t != null) byTitle[t] = p;
+      }
+
+      final items = <SearchItem>[];
+      for (final title in orderedTitles) {
+        final page = byTitle[title];
+        if (page == null || page.containsKey('missing')) continue;
+
+        final infoList = page['imageinfo'] as List?;
+        if (infoList == null || infoList.isEmpty) continue;
+        final info = infoList.first as Map<String, dynamic>;
+
+        final mime = (info['mime'] as String? ?? '').toLowerCase();
+        final isSvg = mime == 'image/svg+xml';
+        final thumburl = info['thumburl'] as String? ?? '';
+        final originalUrl = info['url'] as String? ?? '';
+        if (originalUrl.isEmpty) continue;
+        final thumb = thumburl.isNotEmpty ? thumburl : originalUrl;
 
         final ext = info['extmetadata'] as Map<String, dynamic>? ?? {};
         final artistHtml = ext['Artist']?['value']?.toString() ?? '';
@@ -450,15 +507,15 @@ class SearchService {
         final height = info['height'] as int? ?? 0;
 
         items.add(SearchItem(
-          title: rawTitle.replaceFirst('File:', ''),
+          title: title.replaceFirst('File:', ''),
           url: originalUrl,
           thumb: thumb,
           commonsUrl:
-              'https://commons.wikimedia.org/wiki/${Uri.encodeComponent(rawTitle)}',
-          snippet: rawTitle,
+              'https://commons.wikimedia.org/wiki/${Uri.encodeComponent(title)}',
+          snippet: title,
           mime: mime,
           isSvg: isSvg,
-          timestamp: info['timestamp'] as String?,
+          timestamp: timestamps[title],
           artistHtml: artistHtml,
           licenseShortName: licenseShort,
           licenseUrl: licenseUrl,
@@ -474,6 +531,7 @@ class SearchService {
       return null;
     }
   }
+
 
   String buildQuerySignature(SearchState state) {
     final built = buildQuery(state);
