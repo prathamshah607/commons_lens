@@ -446,15 +446,18 @@ class _NativeMediaRendererState extends State<_NativeMediaRenderer> {
     _viewId =
         'media-view-${widget.item.url.hashCode}-${DateTime.now().millisecondsSinceEpoch}';
 
-    final isPdf = widget.item.mediaKind == MediaKind.document &&
-        widget.item.extension.toLowerCase() == 'pdf';
     final isVideo = widget.item.mediaKind == MediaKind.video;
     final isAudio = widget.item.mediaKind == MediaKind.audio;
 
     final isImage = widget.item.mediaKind == MediaKind.image ||
         widget.item.mediaKind == MediaKind.vector;
 
-    if (isVideo || isAudio || isPdf || isImage) {
+    // PDF is deliberately excluded from native rendering: Safari (iOS and
+    // macOS) does not reliably render cross-origin PDFs inside an iframe —
+    // it silently shows blank content instead of erroring, so there's no
+    // good way to detect and recover from it client-side. Falls through to
+    // the thumbnail+icon fallback below instead, which works everywhere.
+    if (isVideo || isAudio || isImage) {
       _isNativeHtml = true;
 
       ui_web.platformViewRegistry.registerViewFactory(_viewId, (int viewId) {
@@ -476,7 +479,8 @@ class _NativeMediaRendererState extends State<_NativeMediaRenderer> {
             ..style.objectFit = 'contain'
             ..style.backgroundColor = '#070707'
             ..style.outline = 'none';
-        } else if (isAudio) {
+        } else {
+          // isAudio — the only remaining branch.
           final container = html.DivElement()
             ..style.display = 'flex'
             ..style.alignItems = 'center'
@@ -493,13 +497,6 @@ class _NativeMediaRendererState extends State<_NativeMediaRenderer> {
 
           container.append(audio);
           return container;
-        } else {
-          return html.IFrameElement()
-            ..src = widget.item.url
-            ..style.width = '100%'
-            ..style.height = '100%'
-            ..style.border = 'none'
-            ..style.backgroundColor = '#323639';
         }
       });
     }
