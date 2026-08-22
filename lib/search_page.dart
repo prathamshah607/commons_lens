@@ -53,6 +53,8 @@ class _FeatureCardState extends State<_FeatureCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Icon(widget.icon, size: 20, color: const Color(0xFF3D7EFF)),
+            const SizedBox(height: 12),
             Text(widget.title,
                 style: const TextStyle(
                     color: Colors.white,
@@ -82,6 +84,11 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   bool _urlHydrated = false;
   bool _showQueryPreview = false;
   bool? _isFiltersExpanded;
+
+  bool _isDownloading = false;
+  int _downloadCompleted = 0;
+  int _downloadTotal = 0;
+  List<String> _downloadFailed = [];
 
   static const _examples = [
     'Apollo 11',
@@ -132,6 +139,31 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     }
   }
 
+  Future<void> _startBulkDownload(List<SearchItem> items) async {
+    setState(() {
+      _isDownloading = true;
+      _downloadCompleted = 0;
+      _downloadTotal = items.length;
+      _downloadFailed = [];
+    });
+
+    await DownloadService.downloadBulkZip(
+      items,
+      zipName: 'selected_commons_media.zip',
+      onProgress: (completed, total, failedTitles) {
+        if (!mounted) return;
+        setState(() {
+          _downloadCompleted = completed;
+          _downloadTotal = total;
+          _downloadFailed = failedTitles;
+        });
+      },
+    );
+
+    if (!mounted) return;
+    setState(() => _isDownloading = false);
+  }
+
   Widget _buildBulkActionBar(SearchSession session) {
     final isSelectionMode = ref.watch(selectionModeProvider);
     final selectedItems = ref.watch(selectedItemsProvider);
@@ -146,33 +178,79 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       ),
       child: SafeArea(
         top: false,
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ElevatedButton.icon(
-              onPressed: () {
-                ref.read(selectionModeProvider.notifier).state = false;
-                ref.read(selectedItemsProvider.notifier).state = {};
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2A2A2A),
-                foregroundColor: Colors.white,
+            if (_isDownloading) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: _downloadTotal == 0
+                      ? null
+                      : _downloadCompleted / _downloadTotal,
+                  minHeight: 6,
+                  backgroundColor: const Color(0xFF2A2A2A),
+                  valueColor:
+                      const AlwaysStoppedAnimation(Color(0xFF3D7EFF)),
+                ),
               ),
-              icon: const Icon(Icons.close, size: 18),
-              label: const Text('Cancel'),
-            ),
-            const Spacer(),
-            ElevatedButton.icon(
-              onPressed: selectedItems.isEmpty
-                  ? null
-                  : () {
-                      DownloadService.downloadBulkZip(selectedItems.toList(),
-                          zipName: 'selected_commons_media.zip');
-                    },
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF3D7EFF)),
-              icon: const Icon(Icons.download, size: 18, color: Colors.white),
-              label: Text('Download (${selectedItems.length})',
-                  style: const TextStyle(color: Colors.white)),
+              const SizedBox(height: 8),
+              Text(
+                _downloadFailed.isEmpty
+                    ? 'Downloading $_downloadCompleted / $_downloadTotal…'
+                    : 'Downloading $_downloadCompleted / $_downloadTotal — '
+                        '${_downloadFailed.length} failed',
+                style: TextStyle(
+                  color: _downloadFailed.isEmpty
+                      ? const Color(0xFF888888)
+                      : const Color(0xFFFF6B6B),
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            Row(
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _isDownloading
+                      ? null
+                      : () {
+                          ref.read(selectionModeProvider.notifier).state =
+                              false;
+                          ref.read(selectedItemsProvider.notifier).state = {};
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2A2A2A),
+                    foregroundColor: Colors.white,
+                  ),
+                  icon: const Icon(Icons.close, size: 18),
+                  label: const Text('Cancel'),
+                ),
+                const Spacer(),
+                ElevatedButton.icon(
+                  onPressed: (selectedItems.isEmpty || _isDownloading)
+                      ? null
+                      : () => _startBulkDownload(selectedItems.toList()),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF3D7EFF)),
+                  icon: _isDownloading
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.download,
+                          size: 18, color: Colors.white),
+                  label: Text(
+                    _isDownloading
+                        ? 'Downloading…'
+                        : 'Download (${selectedItems.length})',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -261,6 +339,24 @@ class _SearchPageState extends ConsumerState<SearchPage> {
       next = current.copyWith(clearMinHeight: true);
     } else if (chip.id == 'nearCoord') {
       next = current.copyWith(clearNearCoord: true);
+    } else if (chip.id == 'nearTitle') {
+      next = current.copyWith(clearNearTitle: true);
+    } else if (chip.id.startsWith('excludeStatement:')) {
+      final parts = chip.id.substring('excludeStatement:'.length).split(':');
+      if (parts.length == 2) {
+        next = current.copyWith(
+            statementsExclude: Set<WikidataStatement>.from(current.statementsExclude)
+              ..removeWhere(
+                  (s) => s.property.qid == parts[0] && s.value.qid == parts[1]));
+      }
+    } else if (chip.id.startsWith('statement:')) {
+      final parts = chip.id.substring('statement:'.length).split(':');
+      if (parts.length == 2) {
+        next = current.copyWith(
+            statementsInclude: Set<WikidataStatement>.from(current.statementsInclude)
+              ..removeWhere(
+                  (s) => s.property.qid == parts[0] && s.value.qid == parts[1]));
+      }
     } else if (chip.id.startsWith('exclude:')) {
       final excludeName = chip.id.substring('exclude:'.length);
       next = current.copyWith(
@@ -372,7 +468,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
             if (wasSynchronouslyLoaded) return child;
             return AnimatedOpacity(
-              opacity: frame == null ? 0.2 : 1,
+              opacity: frame == null ? 0 : 1,
               duration: const Duration(seconds: 3),
               curve: Curves.easeOut,
               child: child,
@@ -401,12 +497,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 60),
             child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.95
-              ),
+              constraints: const BoxConstraints(maxWidth: 900),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   const WikiLogo(),
                   const SizedBox(height: 32),
@@ -422,7 +515,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                           height: 1.1)),
                   const SizedBox(height: 16),
                   const Text(
-                      'A place to explore Wikimedia Commons, one of the world\'s largest repositories of free-to-use media.\nEngineered to make navigation, filtering and extraction intuitive and seamless.',
+                      'A place to explore the world\'s largest free media archive.\nEngineered specifically for scientists and researchers to navigate, filter, and extract media intuitively and effortlessly.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                           color: Color(0xFFCCCCCC),
@@ -458,15 +551,13 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              Text(
-                                label,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                    color: Color(0xFF3D7EFF),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: 2.0),
-                              ),
+                              Text(label,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                      color: Color(0xFF3D7EFF),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 2.0)),
                               const SizedBox(height: 16),
                               Wrap(
                                 alignment: WrapAlignment.center,
@@ -479,12 +570,10 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                         );
                       }
 
-                      return Align(
-                        alignment: Alignment.center,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            group('SEMANTIC & METADATA SEARCH', [
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          group('SEMANTIC & METADATA SEARCH', [
                               _FeatureCard(
                                 icon: Icons.travel_explore,
                                 title: 'Wikidata Depicts Search',
@@ -496,7 +585,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                                 icon: Icons.category_outlined,
                                 title: 'Category Include / Exclude',
                                 description:
-                                    'Multi-select Commons categories. Isolate or eliminate entire category trees, deep-traversal included.',
+                                    'Multi-select Commons categories — isolate or eliminate entire category trees, deep-traversal included.',
                                 width: cardWidth,
                               ),
                               _FeatureCard(
@@ -510,7 +599,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                                 icon: Icons.filter_alt_outlined,
                                 title: 'Filter-Only Search',
                                 description:
-                                    'Run a full search from filters alone: depicts, category, license; no text query required.',
+                                    'Run a full search from filters alone — depicts, category, license — no text query required.',
                                 width: cardWidth,
                               ),
                             ]),
@@ -547,7 +636,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                                 icon: Icons.perm_media_outlined,
                                 title: 'File-Type Precision',
                                 description:
-                                    'Isolate exact formats: images, vectors, audio, video, documents.',
+                                    'Isolate exact formats — images, vectors, audio, video, documents.',
                                 width: cardWidth,
                               ),
                             ]),
@@ -584,8 +673,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                               ),
                             ]),
                           ],
-                        ),
-                      );
+                        );
                     },
                   ),
 

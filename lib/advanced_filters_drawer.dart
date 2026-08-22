@@ -23,6 +23,8 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
   late TextEditingController _latCtrl;
   late TextEditingController _lngCtrl;
   late TextEditingController _radiusCtrl;
+  late TextEditingController _nearTitleCtrl;
+  late TextEditingController _nearTitleRadiusCtrl;
 
   Set<String> _categoriesInclude = {};
   Set<String> _categoriesExclude = {};
@@ -33,6 +35,13 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
   Set<DepictsEntity> _depictsExclude = {};
   bool _depictsExcludeMode = false;
   TextEditingController? _depictsFieldController;
+
+  Set<WikidataStatement> _statementsInclude = {};
+  Set<WikidataStatement> _statementsExclude = {};
+  bool _statementExcludeMode = false;
+  DepictsEntity? _pendingProperty;
+  TextEditingController? _propertyFieldController;
+  TextEditingController? _statementValueFieldController;
 
   late TextEditingController _langCtrl;
   late TextEditingController _modelCtrl;
@@ -56,11 +65,16 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
         TextEditingController(text: state.nearCoord?.lng.toString() ?? '');
     _radiusCtrl = TextEditingController(
         text: state.nearCoord?.radiusKm.toString() ?? '10');
+    _nearTitleCtrl = TextEditingController(text: state.nearTitle?.title ?? '');
+    _nearTitleRadiusCtrl = TextEditingController(
+        text: state.nearTitle?.radiusKm.toString() ?? '10');
 
     _categoriesInclude = Set.from(state.categories);
     _categoriesExclude = Set.from(state.excludeCategories);
     _depictsInclude = Set.from(state.depictsInclude);
     _depictsExclude = Set.from(state.depictsExclude);
+    _statementsInclude = Set.from(state.statementsInclude);
+    _statementsExclude = Set.from(state.statementsExclude);
 
     _langCtrl = TextEditingController(text: state.languageCode ?? '');
     _modelCtrl = TextEditingController(text: state.contentModel ?? '');
@@ -78,6 +92,8 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
     _latCtrl.dispose();
     _lngCtrl.dispose();
     _radiusCtrl.dispose();
+    _nearTitleCtrl.dispose();
+    _nearTitleRadiusCtrl.dispose();
     _langCtrl.dispose();
     _modelCtrl.dispose();
     _createdFromCtrl.dispose();
@@ -93,9 +109,16 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
     final lat = double.tryParse(_latCtrl.text);
     final lng = double.tryParse(_lngCtrl.text);
     final rad = double.tryParse(_radiusCtrl.text) ?? 10.0;
+    final nearTitleText = _nearTitleCtrl.text.trim();
+    final nearTitleRad = double.tryParse(_nearTitleRadiusCtrl.text) ?? 10.0;
 
+    // Mutually exclusive geo modes — a place name takes priority if both
+    // happen to be filled in, since it's the more specific/intentional entry.
     NearCoordFilter? coordFilter;
-    if (lat != null && lng != null) {
+    NearTitleFilter? titleFilter;
+    if (nearTitleText.isNotEmpty) {
+      titleFilter = NearTitleFilter(title: nearTitleText, radiusKm: nearTitleRad);
+    } else if (lat != null && lng != null) {
       coordFilter = NearCoordFilter(lat: lat, lng: lng, radiusKm: rad);
     }
 
@@ -123,10 +146,14 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
       clearMinHeight: h == null,
       nearCoord: coordFilter,
       clearNearCoord: coordFilter == null,
+      nearTitle: titleFilter,
+      clearNearTitle: titleFilter == null,
       categories: _categoriesInclude,
       excludeCategories: _categoriesExclude,
       depictsInclude: _depictsInclude,
       depictsExclude: _depictsExclude,
+      statementsInclude: _statementsInclude,
+      statementsExclude: _statementsExclude,
       languageCode: lang,
       clearLanguageCode: lang == null,
       contentModel: model,
@@ -298,6 +325,175 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 24),
+
+                  _buildSectionHeader('WIKIDATA PROPERTY SEARCH'),
+                  if (_statementsInclude.isNotEmpty ||
+                      _statementsExclude.isNotEmpty) ...[
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        ..._statementsInclude.map((s) => _buildFilterChip(
+                              label: '${s.property.label}: ${s.value.label}',
+                              excluded: false,
+                              onDeleted: () =>
+                                  setState(() => _statementsInclude.remove(s)),
+                            )),
+                        ..._statementsExclude.map((s) => _buildFilterChip(
+                              label: '${s.property.label}: ${s.value.label}',
+                              excluded: true,
+                              onDeleted: () =>
+                                  setState(() => _statementsExclude.remove(s)),
+                            )),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (_pendingProperty != null) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF13203A),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFF3D7EFF)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.check_circle,
+                              size: 14, color: Color(0xFF3D7EFF)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Property: ${_pendingProperty!.label} — now search a value',
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 12),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close,
+                                size: 16, color: Colors.white54),
+                            onPressed: () =>
+                                setState(() => _pendingProperty = null),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Autocomplete<DepictsEntity>(
+                          key: ValueKey(_pendingProperty == null
+                              ? 'statement-property'
+                              : 'statement-value'),
+                          displayStringForOption: (option) => option.label,
+                          optionsBuilder:
+                              (TextEditingValue textEditingValue) async {
+                            if (textEditingValue.text.isEmpty) {
+                              return const Iterable<DepictsEntity>.empty();
+                            }
+                            return _pendingProperty == null
+                                ? await _service.searchWikidataProperties(
+                                    textEditingValue.text)
+                                : await _service.searchDepictsEntities(
+                                    textEditingValue.text);
+                          },
+                          onSelected: (DepictsEntity selection) {
+                            if (_pendingProperty == null) {
+                              setState(() => _pendingProperty = selection);
+                              _propertyFieldController?.clear();
+                            } else {
+                              final stmt = WikidataStatement(
+                                  property: _pendingProperty!,
+                                  value: selection);
+                              setState(() {
+                                if (_statementExcludeMode) {
+                                  _statementsInclude.remove(stmt);
+                                  _statementsExclude.add(stmt);
+                                } else {
+                                  _statementsExclude.remove(stmt);
+                                  _statementsInclude.add(stmt);
+                                }
+                                _pendingProperty = null;
+                              });
+                              _statementValueFieldController?.clear();
+                            }
+                          },
+                          fieldViewBuilder: (context, controller, focusNode,
+                              onEditingComplete) {
+                            if (_pendingProperty == null) {
+                              _propertyFieldController = controller;
+                            } else {
+                              _statementValueFieldController = controller;
+                            }
+                            return TextField(
+                              keyboardType: (kIsWeb &&
+                                      (defaultTargetPlatform ==
+                                              TargetPlatform.iOS ||
+                                          defaultTargetPlatform ==
+                                              TargetPlatform.android))
+                                  ? TextInputType.text
+                                  : TextInputType.url,
+                              controller: controller,
+                              focusNode: focusNode,
+                              style: const TextStyle(color: Colors.white),
+                              decoration: _inputDecoration().copyWith(
+                                hintText: _pendingProperty == null
+                                    ? 'Search property (e.g. location of creation)...'
+                                    : 'Search value (e.g. Paris)...',
+                              ),
+                            );
+                          },
+                          optionsViewBuilder: (context, onSelected, options) {
+                            return Align(
+                              alignment: Alignment.topLeft,
+                              child: Material(
+                                color: const Color(0xFF1E1E1E),
+                                elevation: 4,
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                      maxHeight: 200, maxWidth: 360),
+                                  child: ListView.builder(
+                                    padding: EdgeInsets.zero,
+                                    shrinkWrap: true,
+                                    itemCount: options.length,
+                                    itemBuilder: (context, index) {
+                                      final option = options.elementAt(index);
+                                      return ListTile(
+                                        title: Text(option.label,
+                                            style: const TextStyle(
+                                                color: Colors.white)),
+                                        subtitle: option.description != null
+                                            ? Text(option.description!,
+                                                style: const TextStyle(
+                                                    color: Colors.white54,
+                                                    fontSize: 11))
+                                            : null,
+                                        onTap: () => onSelected(option),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      _buildExcludeModeToggle(
+                        excludeMode: _statementExcludeMode,
+                        onChanged: (val) =>
+                            setState(() => _statementExcludeMode = val),
+                      ),
+                    ],
+                  ),
+
                   const SizedBox(height: 24),
 
                   _buildSectionHeader('LICENSE / RIGHTS'),
@@ -657,6 +853,57 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
                           style: const TextStyle(color: Colors.white),
                           decoration:
                               _inputDecoration().copyWith(hintText: 'Lng'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: const [
+                      Expanded(child: Divider(color: Color(0xFF222222))),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 10),
+                        child: Text('OR SEARCH NEAR A PLACE',
+                            style: TextStyle(
+                                color: Color(0xFF555555),
+                                fontSize: 9,
+                                letterSpacing: 1.2,
+                                fontWeight: FontWeight.w700)),
+                      ),
+                      Expanded(child: Divider(color: Color(0xFF222222))),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: TextField(
+                          keyboardType: (kIsWeb &&
+                                  (defaultTargetPlatform ==
+                                          TargetPlatform.iOS ||
+                                      defaultTargetPlatform ==
+                                          TargetPlatform.android))
+                              ? TextInputType.text
+                              : TextInputType.url,
+                          controller: _nearTitleCtrl,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: _inputDecoration()
+                              .copyWith(hintText: 'e.g. Eiffel Tower'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 1,
+                        child: TextField(
+                          controller: _nearTitleRadiusCtrl,
+                          style: const TextStyle(color: Colors.white),
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly
+                          ],
+                          decoration:
+                              _inputDecoration().copyWith(hintText: 'km'),
                         ),
                       ),
                     ],

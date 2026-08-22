@@ -23,6 +23,11 @@ class _AuthorPortfolioPageState extends ConsumerState<AuthorPortfolioPage> {
   late final TextEditingController _authorCtrl =
       TextEditingController(text: widget.username);
 
+  bool _isDownloading = false;
+  int _downloadCompleted = 0;
+  int _downloadTotal = 0;
+  List<String> _downloadFailed = [];
+
   @override
   void initState() {
     super.initState();
@@ -109,6 +114,31 @@ class _AuthorPortfolioPageState extends ConsumerState<AuthorPortfolioPage> {
     );
   }
 
+  Future<void> _startBulkDownload(List<SearchItem> items) async {
+    setState(() {
+      _isDownloading = true;
+      _downloadCompleted = 0;
+      _downloadTotal = items.length;
+      _downloadFailed = [];
+    });
+
+    await DownloadService.downloadBulkZip(
+      items,
+      zipName: '${widget.username}_portfolio.zip',
+      onProgress: (completed, total, failedTitles) {
+        if (!mounted) return;
+        setState(() {
+          _downloadCompleted = completed;
+          _downloadTotal = total;
+          _downloadFailed = failedTitles;
+        });
+      },
+    );
+
+    if (!mounted) return;
+    setState(() => _isDownloading = false);
+  }
+
   Widget _buildBulkActionBar() {
     final isSelectionMode = ref.watch(selectionModeProvider);
     final selectedItems = ref.watch(selectedItemsProvider);
@@ -122,35 +152,79 @@ class _AuthorPortfolioPageState extends ConsumerState<AuthorPortfolioPage> {
       ),
       child: SafeArea(
         top: false,
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ElevatedButton.icon(
-              onPressed: () {
-                ref.read(selectionModeProvider.notifier).state = false;
-                ref.read(selectedItemsProvider.notifier).state = {};
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2A2A2A),
-                foregroundColor: Colors.white,
+            if (_isDownloading) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: _downloadTotal == 0
+                      ? null
+                      : _downloadCompleted / _downloadTotal,
+                  minHeight: 6,
+                  backgroundColor: const Color(0xFF2A2A2A),
+                  valueColor:
+                      const AlwaysStoppedAnimation(Color(0xFF3D7EFF)),
+                ),
               ),
-              icon: const Icon(Icons.close, size: 18),
-              label: const Text('Cancel'),
-            ),
-            const Spacer(),
-            ElevatedButton.icon(
-              onPressed: selectedItems.isEmpty
-                  ? null
-                  : () {
-                      DownloadService.downloadBulkZip(
-                        selectedItems.toList(),
-                        zipName: '${widget.username}_portfolio.zip',
-                      );
-                    },
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF3D7EFF)),
-              icon: const Icon(Icons.download, size: 18, color: Colors.white),
-              label: Text('Download (${selectedItems.length})',
-                  style: const TextStyle(color: Colors.white)),
+              const SizedBox(height: 8),
+              Text(
+                _downloadFailed.isEmpty
+                    ? 'Downloading $_downloadCompleted / $_downloadTotal…'
+                    : 'Downloading $_downloadCompleted / $_downloadTotal — '
+                        '${_downloadFailed.length} failed',
+                style: TextStyle(
+                  color: _downloadFailed.isEmpty
+                      ? const Color(0xFF888888)
+                      : const Color(0xFFFF6B6B),
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            Row(
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _isDownloading
+                      ? null
+                      : () {
+                          ref.read(selectionModeProvider.notifier).state =
+                              false;
+                          ref.read(selectedItemsProvider.notifier).state = {};
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2A2A2A),
+                    foregroundColor: Colors.white,
+                  ),
+                  icon: const Icon(Icons.close, size: 18),
+                  label: const Text('Cancel'),
+                ),
+                const Spacer(),
+                ElevatedButton.icon(
+                  onPressed: (selectedItems.isEmpty || _isDownloading)
+                      ? null
+                      : () => _startBulkDownload(selectedItems.toList()),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF3D7EFF)),
+                  icon: _isDownloading
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.download,
+                          size: 18, color: Colors.white),
+                  label: Text(
+                    _isDownloading
+                        ? 'Downloading…'
+                        : 'Download (${selectedItems.length})',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

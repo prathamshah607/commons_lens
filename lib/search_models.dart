@@ -63,6 +63,7 @@ enum QualityFilter {
   any,
   qualityImage,
   valuedImage,
+  featuredPicture,
 }
 
 String qualityFilterLabel(QualityFilter filter) {
@@ -73,6 +74,8 @@ String qualityFilterLabel(QualityFilter filter) {
       return 'Quality images';
     case QualityFilter.valuedImage:
       return 'Valued images';
+    case QualityFilter.featuredPicture:
+      return 'Featured pictures';
   }
 }
 
@@ -128,6 +131,28 @@ class NearCoordFilter {
   }
 }
 
+/// Geosearch near a page/entity title instead of raw coordinates — CirrusSearch's
+/// neartitle: keyword sources the coordinates from the named page itself.
+/// Mutually exclusive with NearCoordFilter in practice (the drawer enforces
+/// this), but kept as a separate field rather than folded into one type so
+/// each stays a simple, direct mirror of its own CirrusSearch keyword.
+class NearTitleFilter {
+  final String title;
+  final double radiusKm;
+
+  const NearTitleFilter({
+    required this.title,
+    this.radiusKm = 10,
+  });
+
+  NearTitleFilter copyWith({String? title, double? radiusKm}) {
+    return NearTitleFilter(
+      title: title ?? this.title,
+      radiusKm: radiusKm ?? this.radiusKm,
+    );
+  }
+}
+
 class DepictsEntity {
   final String qid;
   final String label;
@@ -145,6 +170,28 @@ class DepictsEntity {
 
   @override
   int get hashCode => qid.hashCode;
+}
+
+/// An arbitrary Wikidata property=value pair, for haswbstatement: search
+/// beyond the two hardcoded properties (P180 depicts, P275 license) that
+/// depictsInclude/licensePreset already cover. Reuses DepictsEntity's shape
+/// for both sides — the "property" field's .qid holds a P-code (e.g.
+/// "P1071") rather than a Q-code, which is a minor naming imprecision
+/// that's a fair trade for not duplicating an identical class.
+class WikidataStatement {
+  final DepictsEntity property; // .qid holds a P-code, e.g. "P1071"
+  final DepictsEntity value; // .qid holds a Q-code, e.g. "Q90"
+
+  const WikidataStatement({required this.property, required this.value});
+
+  @override
+  bool operator ==(Object other) =>
+      other is WikidataStatement &&
+      other.property.qid == property.qid &&
+      other.value.qid == value.qid;
+
+  @override
+  int get hashCode => Object.hash(property.qid, value.qid);
 }
 
 class SearchState {
@@ -168,6 +215,9 @@ class SearchState {
   final Set<DepictsEntity> depictsExclude;
   final Set<String> excludeCategories;
   final NearCoordFilter? nearCoord;
+  final NearTitleFilter? nearTitle;
+  final Set<WikidataStatement> statementsInclude;
+  final Set<WikidataStatement> statementsExclude;
   final Set<String> excludeTerms;
 
   const SearchState({
@@ -191,6 +241,9 @@ class SearchState {
     this.depictsExclude = const {},
     this.excludeCategories = const {},
     this.nearCoord,
+    this.nearTitle,
+    this.statementsInclude = const {},
+    this.statementsExclude = const {},
     this.excludeTerms = const {},
   });
 
@@ -215,6 +268,9 @@ class SearchState {
     Set<DepictsEntity>? depictsExclude,
     Set<String>? excludeCategories,
     NearCoordFilter? nearCoord,
+    NearTitleFilter? nearTitle,
+    Set<WikidataStatement>? statementsInclude,
+    Set<WikidataStatement>? statementsExclude,
     Set<String>? excludeTerms,
     bool clearLanguageCode = false,
     bool clearContentModel = false,
@@ -223,6 +279,7 @@ class SearchState {
     bool clearMinWidth = false,
     bool clearMinHeight = false,
     bool clearNearCoord = false,
+    bool clearNearTitle = false,
   }) {
     return SearchState(
       queryText: queryText ?? this.queryText,
@@ -249,6 +306,9 @@ class SearchState {
       depictsExclude: depictsExclude ?? this.depictsExclude,
       excludeCategories: excludeCategories ?? this.excludeCategories,
       nearCoord: clearNearCoord ? null : (nearCoord ?? this.nearCoord),
+      nearTitle: clearNearTitle ? null : (nearTitle ?? this.nearTitle),
+      statementsInclude: statementsInclude ?? this.statementsInclude,
+      statementsExclude: statementsExclude ?? this.statementsExclude,
       excludeTerms: excludeTerms ?? this.excludeTerms,
     );
   }

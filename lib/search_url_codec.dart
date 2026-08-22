@@ -41,6 +41,22 @@ class SearchUrlCodec {
       params['depictsEx'] = entries.join('|');
     }
 
+    if (state.statementsInclude.isNotEmpty) {
+      final entries = state.statementsInclude
+          .map((s) => '${s.property.qid}~${s.property.label}~${s.value.qid}~${s.value.label}')
+          .toList()
+        ..sort();
+      params['statementsIn'] = entries.join('|');
+    }
+
+    if (state.statementsExclude.isNotEmpty) {
+      final entries = state.statementsExclude
+          .map((s) => '${s.property.qid}~${s.property.label}~${s.value.qid}~${s.value.label}')
+          .toList()
+        ..sort();
+      params['statementsEx'] = entries.join('|');
+    }
+
     if (state.deepCategoryMode) params['deepcat'] = '1';
     if (state.titleOnly) params['titleOnly'] = '1';
     if (state.localOnly) params['local'] = '1';
@@ -86,6 +102,11 @@ class SearchUrlCodec {
       params['lat'] = coord.lat.toString();
       params['lng'] = coord.lng.toString();
       params['radius'] = coord.radiusKm.toString();
+    }
+
+    if (state.nearTitle != null) {
+      params['nearTitle'] = state.nearTitle!.title;
+      params['nearTitleRadius'] = state.nearTitle!.radiusKm.toString();
     }
 
     if (state.excludeTerms.isNotEmpty) {
@@ -150,6 +171,23 @@ class SearchUrlCodec {
     final depictsInclude = parseDepicts(params['depictsIn']);
     final depictsExclude = parseDepicts(params['depictsEx']);
 
+    Set<WikidataStatement> parseStatements(String? raw) {
+      if (raw == null || raw.isEmpty) return <WikidataStatement>{};
+      return raw.split('|').where((e) => e.isNotEmpty).map((entry) {
+        final parts = entry.split('~');
+        if (parts.length != 4) {
+          return null;
+        }
+        return WikidataStatement(
+          property: DepictsEntity(qid: parts[0], label: parts[1]),
+          value: DepictsEntity(qid: parts[2], label: parts[3]),
+        );
+      }).whereType<WikidataStatement>().toSet();
+    }
+
+    final statementsInclude = parseStatements(params['statementsIn']);
+    final statementsExclude = parseStatements(params['statementsEx']);
+
     final createdFrom = params['createdFrom'];
     final createdTo = params['createdTo'];
     final createdDate = (createdFrom == null && createdTo == null)
@@ -196,6 +234,13 @@ class SearchUrlCodec {
         ? NearCoordFilter(lat: lat, lng: lng, radiusKm: radius)
         : null;
 
+    final nearTitleParam = params['nearTitle'];
+    final nearTitleRadius =
+        double.tryParse(params['nearTitleRadius'] ?? '') ?? 10.0;
+    final nearTitle = (nearTitleParam != null && nearTitleParam.trim().isNotEmpty)
+        ? NearTitleFilter(title: nearTitleParam, radiusKm: nearTitleRadius)
+        : null;
+
     final excludeParam = params['exclude'];
     final excludeTerms = (excludeParam == null || excludeParam.isEmpty)
         ? <String>{}
@@ -209,6 +254,8 @@ class SearchUrlCodec {
       excludeCategories: excludeCategories,
       depictsInclude: depictsInclude,
       depictsExclude: depictsExclude,
+      statementsInclude: statementsInclude,
+      statementsExclude: statementsExclude,
       deepCategoryMode: params['deepcat'] == '1',
       titleOnly: params['titleOnly'] == '1',
       localOnly: params['local'] == '1',
@@ -225,6 +272,8 @@ class SearchUrlCodec {
       clearMinHeight: minHeight == null,
       nearCoord: nearCoord,
       clearNearCoord: nearCoord == null,
+      nearTitle: nearTitle,
+      clearNearTitle: nearTitle == null,
       excludeTerms: excludeTerms,
     );
   }

@@ -20,6 +20,13 @@ class SearchService {
   static const Map<QualityFilter, String> _qualityClauses = {
     QualityFilter.qualityImage: 'hastemplate:"Quality image"', // ~444.6k hits
     QualityFilter.valuedImage: 'hastemplate:"Valued image"', // ~55.6k hits
+    // Featured Pictures are recorded via the shared {{Assessments}} template
+    // (the same one Quality/Valued status can also route through), so
+    // hastemplate:"Assessments" can't isolate just featured status —
+    // it would also match quality/valued-assessed files. The FP category
+    // is the unambiguous, community-maintained marker instead.
+    QualityFilter.featuredPicture:
+        'incategory:"Featured pictures on Wikimedia Commons"',
   };
 
   Future<SearchItem?> fetchSingleItem(String filename) async {
@@ -104,8 +111,9 @@ class SearchService {
     }
   }
 
-  Future<List<DepictsEntity>> searchDepictsEntities(
+  Future<List<DepictsEntity>> _searchWikidataEntities(
     String text, {
+    required String type, // 'item' or 'property'
     int limit = 8,
     String language = 'en',
   }) async {
@@ -118,7 +126,7 @@ class SearchService {
         'search': query,
         'language': language,
         'uselang': language,
-        'type': 'item',
+        'type': type,
         'limit': '$limit',
         'format': 'json',
         'origin': '*',
@@ -146,6 +154,25 @@ class SearchService {
     } catch (_) {
       return [];
     }
+  }
+
+  Future<List<DepictsEntity>> searchDepictsEntities(
+    String text, {
+    int limit = 8,
+    String language = 'en',
+  }) {
+    return _searchWikidataEntities(text, type: 'item', limit: limit, language: language);
+  }
+
+  /// For the generalized Wikidata property browser (haswbstatement: beyond
+  /// just depicts/license) — searches Wikidata properties (P-codes) instead
+  /// of items (Q-codes), e.g. "location of creation" -> P1071.
+  Future<List<DepictsEntity>> searchWikidataProperties(
+    String text, {
+    int limit = 8,
+    String language = 'en',
+  }) {
+    return _searchWikidataEntities(text, type: 'property', limit: limit, language: language);
   }
 
   Future<List<String>> searchCategories(String query) async {
@@ -349,6 +376,28 @@ class SearchService {
       ));
     }
 
+    // Generalized Wikidata property search — same haswbstatement: mechanism
+    // as depicts (P180) above, but for any property the user picks.
+    for (final stmt in state.statementsInclude.toList()
+      ..sort((a, b) =>
+          '${a.property.qid}${a.value.qid}'.compareTo('${b.property.qid}${b.value.qid}'))) {
+      parts.add('haswbstatement:${stmt.property.qid}=${stmt.value.qid}');
+      chips.add(QueryChipData(
+        id: 'statement:${stmt.property.qid}:${stmt.value.qid}',
+        label: '${stmt.property.label}: ${stmt.value.label}',
+      ));
+    }
+
+    for (final stmt in state.statementsExclude.toList()
+      ..sort((a, b) =>
+          '${a.property.qid}${a.value.qid}'.compareTo('${b.property.qid}${b.value.qid}'))) {
+      parts.add('-haswbstatement:${stmt.property.qid}=${stmt.value.qid}');
+      chips.add(QueryChipData(
+        id: 'excludeStatement:${stmt.property.qid}:${stmt.value.qid}',
+        label: 'Not ${stmt.property.label}: ${stmt.value.label}',
+      ));
+    }
+
     if (state.nearCoord != null) {
       final coord = state.nearCoord!;
       final radius = coord.radiusKm.toStringAsFixed(0);
@@ -357,6 +406,14 @@ class SearchService {
         id: 'nearCoord',
         label: 'Near ${coord.lat.toStringAsFixed(3)}, '
             '${coord.lng.toStringAsFixed(3)} (${radius}km)',
+      ));
+    } else if (state.nearTitle != null) {
+      final nt = state.nearTitle!;
+      final radius = nt.radiusKm.toStringAsFixed(0);
+      parts.add('neartitle:"${radius}km,${nt.title}"');
+      chips.add(QueryChipData(
+        id: 'nearTitle',
+        label: 'Near "${nt.title}" (${radius}km)',
       ));
     }
 
@@ -559,7 +616,10 @@ class SearchService {
       'excludeCategories=${(state.excludeCategories.toList()..sort()).join(",")}',
       'depictsInclude=${(state.depictsInclude.map((e) => e.qid).toList()..sort()).join(",")}',
       'depictsExclude=${(state.depictsExclude.map((e) => e.qid).toList()..sort()).join(",")}',
+      'statementsInclude=${(state.statementsInclude.map((s) => "${s.property.qid}=${s.value.qid}").toList()..sort()).join(",")}',
+      'statementsExclude=${(state.statementsExclude.map((s) => "${s.property.qid}=${s.value.qid}").toList()..sort()).join(",")}',
       'near=${state.nearCoord != null ? "${state.nearCoord!.lat},${state.nearCoord!.lng},${state.nearCoord!.radiusKm}" : ""}',
+      'nearTitle=${state.nearTitle != null ? "${state.nearTitle!.title},${state.nearTitle!.radiusKm}" : ""}',
       'exclude=${(state.excludeTerms.toList()..sort()).join(",")}',
     ].join('|');
   }
