@@ -218,6 +218,12 @@ class SearchState {
   final NearTitleFilter? nearTitle;
   final Set<WikidataStatement> statementsInclude;
   final Set<WikidataStatement> statementsExclude;
+  // false (default) = intersection: all included statements must match (AND).
+  // true = union: any included statement may match (OR). Excluded
+  // statements are always subtracted regardless of this mode — i.e. "this
+  // AND this AND NOT this" (intersection) vs "this OR this, but NOT this"
+  // (union), matching how the two toggle buttons are meant to read.
+  final bool statementsUnion;
   final Set<String> excludeTerms;
 
   const SearchState({
@@ -244,6 +250,7 @@ class SearchState {
     this.nearTitle,
     this.statementsInclude = const {},
     this.statementsExclude = const {},
+    this.statementsUnion = false,
     this.excludeTerms = const {},
   });
 
@@ -271,6 +278,7 @@ class SearchState {
     NearTitleFilter? nearTitle,
     Set<WikidataStatement>? statementsInclude,
     Set<WikidataStatement>? statementsExclude,
+    bool? statementsUnion,
     Set<String>? excludeTerms,
     bool clearLanguageCode = false,
     bool clearContentModel = false,
@@ -309,6 +317,7 @@ class SearchState {
       nearTitle: clearNearTitle ? null : (nearTitle ?? this.nearTitle),
       statementsInclude: statementsInclude ?? this.statementsInclude,
       statementsExclude: statementsExclude ?? this.statementsExclude,
+      statementsUnion: statementsUnion ?? this.statementsUnion,
       excludeTerms: excludeTerms ?? this.excludeTerms,
     );
   }

@@ -5,14 +5,21 @@ import 'package:archive/archive.dart';
 import 'search_models.dart';
 
 class DownloadService {
-  static const _userAgentHeaders = {
-    'Api-User-Agent': 'CommonslensApp/1.0 (Flutter Web)',
-  };
+  // Deliberately NOT sending a custom header (e.g. Api-User-Agent) here.
+  // upload.wikimedia.org is the raw media storage layer, not the MediaWiki
+  // API — unlike commons.wikimedia.org/w/api.php and
+  // www.wikidata.org/w/api.php, it's not confirmed to allow custom headers
+  // in its CORS policy. Any custom header turns a "simple" cross-origin GET
+  // into one that requires a CORS preflight (OPTIONS) first; if that
+  // preflight isn't explicitly allowed, the browser blocks the request
+  // before it ever reaches the network — every download fails identically
+  // and instantly, with no distinguishing error. Plain http.get with no
+  // extra headers is what actually works here.
 
   static Future<void> downloadSingleFile(String url, String title, String extension) async {
     try {
       final response = await http
-          .get(Uri.parse(url), headers: _userAgentHeaders)
+          .get(Uri.parse(url))
           .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
@@ -48,7 +55,7 @@ class DownloadService {
     for (var attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         final response = await http
-            .get(Uri.parse(url), headers: _userAgentHeaders)
+            .get(Uri.parse(url))
             .timeout(timeout);
 
         if (response.statusCode == 200) return response;

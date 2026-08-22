@@ -167,12 +167,25 @@ class SearchService {
   /// For the generalized Wikidata property browser (haswbstatement: beyond
   /// just depicts/license) — searches Wikidata properties (P-codes) instead
   /// of items (Q-codes), e.g. "location of creation" -> P1071.
+  ///
+  /// P180 (depicts) and P275 (copyright status/license) are deliberately
+  /// filtered out: both already have their own dedicated fields elsewhere
+  /// in the drawer (Depicts, License), and letting either be picked here
+  /// too would let a user represent the same underlying filter in two
+  /// separate places — best case a harmless duplicate clause, worst case a
+  /// direct contradiction (e.g. "Depicts: Cat" as include, "P180: Cat" as
+  /// exclude via this picker), which would silently zero out all results
+  /// with no visible explanation.
+  static const Set<String> _reservedPropertyIds = {'P180', 'P275'};
+
   Future<List<DepictsEntity>> searchWikidataProperties(
     String text, {
     int limit = 8,
     String language = 'en',
-  }) {
-    return _searchWikidataEntities(text, type: 'property', limit: limit, language: language);
+  }) async {
+    final results = await _searchWikidataEntities(text,
+        type: 'property', limit: limit, language: language);
+    return results.where((p) => !_reservedPropertyIds.contains(p.qid)).toList();
   }
 
   Future<List<String>> searchCategories(String query) async {
@@ -377,11 +390,32 @@ class SearchService {
     }
 
     // Generalized Wikidata property search — same haswbstatement: mechanism
-    // as depicts (P180) above, but for any property the user picks.
-    for (final stmt in state.statementsInclude.toList()
+    // as depicts (P180) above, but for any property the user picks. P180
+    // and P275 (license) are deliberately excluded from the property picker
+    // itself (see searchWikidataProperties) so this set can never overlap
+    // or contradict depictsInclude/Exclude or licensePreset.
+    //
+    // Union mode (OR) is NOT expressed as a single "A OR B" query string
+    // here — mixed with other required clauses (category, license, etc.),
+    // Cirrus's OR only binds to its immediately adjacent term, same
+    // precedence hazard as the "+"-query bug elsewhere in this file. The
+    // real OR execution happens via per-statement fan-out in fetchPage
+    // below; this join is just an honest preview of intent.
+    final includeStatements = state.statementsInclude.toList()
       ..sort((a, b) =>
-          '${a.property.qid}${a.value.qid}'.compareTo('${b.property.qid}${b.value.qid}'))) {
-      parts.add('haswbstatement:${stmt.property.qid}=${stmt.value.qid}');
+          '${a.property.qid}${a.value.qid}'.compareTo('${b.property.qid}${b.value.qid}'));
+
+    if (state.statementsUnion && includeStatements.length > 1) {
+      final clauses = includeStatements
+          .map((s) => 'haswbstatement:${s.property.qid}=${s.value.qid}')
+          .toList();
+      parts.add(clauses.join(' OR '));
+    } else {
+      for (final stmt in includeStatements) {
+        parts.add('haswbstatement:${stmt.property.qid}=${stmt.value.qid}');
+      }
+    }
+    for (final stmt in includeStatements) {
       chips.add(QueryChipData(
         id: 'statement:${stmt.property.qid}:${stmt.value.qid}',
         label: '${stmt.property.label}: ${stmt.value.label}',
@@ -618,6 +652,7 @@ class SearchService {
       'depictsExclude=${(state.depictsExclude.map((e) => e.qid).toList()..sort()).join(",")}',
       'statementsInclude=${(state.statementsInclude.map((s) => "${s.property.qid}=${s.value.qid}").toList()..sort()).join(",")}',
       'statementsExclude=${(state.statementsExclude.map((s) => "${s.property.qid}=${s.value.qid}").toList()..sort()).join(",")}',
+      'statementsUnion=${state.statementsUnion}',
       'near=${state.nearCoord != null ? "${state.nearCoord!.lat},${state.nearCoord!.lng},${state.nearCoord!.radiusKm}" : ""}',
       'nearTitle=${state.nearTitle != null ? "${state.nearTitle!.title},${state.nearTitle!.radiusKm}" : ""}',
       'exclude=${(state.excludeTerms.toList()..sort()).join(",")}',
@@ -698,6 +733,72 @@ class SearchService {
   }
 
   Future<SearchResponse?> _fetchPageForQuery(
+    SearchState state, {
+    required Map<String, dynamic>? continueParams,
+  }) async {
+    // Union mode with 2+ include statements: same problem and same fix as
+    // the "+"-query fan-out above — Cirrus can't reliably OR a statement
+    // clause together with the rest of the active filters in one query
+    // string, so each statement runs as its own independent search (with
+    // every other filter, including exclude-statements, still applied) and
+    // results are merged client-side.
+    final includeStatements = state.statementsInclude.toList();
+
+    if (!state.statementsUnion || includeStatements.length <= 1) {
+      return _fetchPageForFormat(state, continueParams: continueParams);
+    }
+
+    final streams = <String, List<SearchItem>>{};
+    final newMultiContinue = <String, dynamic>{};
+    bool anySuccess = false;
+
+    final branchTokens = continueParams?['_stmt'] as Map<String, dynamic>?;
+    final futures = <Future<void>>[];
+
+    for (final stmt in includeStatements) {
+      final key = '${stmt.property.qid}=${stmt.value.qid}';
+      if (continueParams != null &&
+          branchTokens != null &&
+          !branchTokens.containsKey(key)) {
+        continue;
+      }
+
+      final branchContinue = branchTokens?[key] as Map<String, dynamic>?;
+      final branchState = state.copyWith(statementsInclude: {stmt});
+
+      futures.add(() async {
+        final result = await _fetchPageForFormat(branchState,
+            continueParams: branchContinue);
+        if (result != null) {
+          anySuccess = true;
+          streams[key] = result.items;
+          if (result.continueParams != null) {
+            newMultiContinue[key] = result.continueParams;
+          }
+        }
+      }());
+    }
+
+    await Future.wait(futures);
+
+    if (!anySuccess) return null;
+
+    final interleaved = _multiSort<String>(streams, state.sortMode);
+    final seen = <String>{};
+    final deduped = <SearchItem>[];
+    for (final item in interleaved) {
+      // Same file can genuinely satisfy more than one statement branch.
+      if (seen.add(item.url)) deduped.add(item);
+    }
+
+    return SearchResponse(
+      items: deduped,
+      continueParams:
+          newMultiContinue.isNotEmpty ? {'_stmt': newMultiContinue} : null,
+    );
+  }
+
+  Future<SearchResponse?> _fetchPageForFormat(
     SearchState state, {
     required Map<String, dynamic>? continueParams,
   }) async {

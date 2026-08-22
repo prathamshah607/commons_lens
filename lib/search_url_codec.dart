@@ -57,6 +57,10 @@ class SearchUrlCodec {
       params['statementsEx'] = entries.join('|');
     }
 
+    if (state.statementsUnion) {
+      params['statementsUnion'] = '1';
+    }
+
     if (state.deepCategoryMode) params['deepcat'] = '1';
     if (state.titleOnly) params['titleOnly'] = '1';
     if (state.localOnly) params['local'] = '1';
@@ -256,6 +260,7 @@ class SearchUrlCodec {
       depictsExclude: depictsExclude,
       statementsInclude: statementsInclude,
       statementsExclude: statementsExclude,
+      statementsUnion: params['statementsUnion'] == '1',
       deepCategoryMode: params['deepcat'] == '1',
       titleOnly: params['titleOnly'] == '1',
       localOnly: params['local'] == '1',

@@ -39,6 +39,7 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
   Set<WikidataStatement> _statementsInclude = {};
   Set<WikidataStatement> _statementsExclude = {};
   bool _statementExcludeMode = false;
+  bool _statementsUnionMode = false;
   DepictsEntity? _pendingProperty;
   TextEditingController? _propertyFieldController;
   TextEditingController? _statementValueFieldController;
@@ -75,6 +76,7 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
     _depictsExclude = Set.from(state.depictsExclude);
     _statementsInclude = Set.from(state.statementsInclude);
     _statementsExclude = Set.from(state.statementsExclude);
+    _statementsUnionMode = state.statementsUnion;
 
     _langCtrl = TextEditingController(text: state.languageCode ?? '');
     _modelCtrl = TextEditingController(text: state.contentModel ?? '');
@@ -154,6 +156,7 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
       depictsExclude: _depictsExclude,
       statementsInclude: _statementsInclude,
       statementsExclude: _statementsExclude,
+      statementsUnion: _statementsUnionMode,
       languageCode: lang,
       clearLanguageCode: lang == null,
       contentModel: model,
@@ -328,6 +331,36 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
                   const SizedBox(height: 24),
 
                   _buildSectionHeader('WIKIDATA PROPERTY SEARCH'),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildCombineModeButton(
+                          label: 'Intersection (AND)',
+                          selected: !_statementsUnionMode,
+                          onTap: () =>
+                              setState(() => _statementsUnionMode = false),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildCombineModeButton(
+                          label: 'Union (OR)',
+                          selected: _statementsUnionMode,
+                          onTap: () =>
+                              setState(() => _statementsUnionMode = true),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _statementsUnionMode
+                        ? 'Matches ANY selected property below (this OR this), still excluding anything marked "not".'
+                        : 'Matches ALL selected properties below (this AND this), and excludes anything marked "not".',
+                    style: const TextStyle(
+                        color: Color(0xFF555555), fontSize: 10.5, height: 1.4),
+                  ),
+                  const SizedBox(height: 12),
                   if (_statementsInclude.isNotEmpty ||
                       _statementsExclude.isNotEmpty) ...[
                     Wrap(
@@ -821,7 +854,7 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
                   ),
                   const SizedBox(height: 24),
 
-                  _buildSectionHeader('GEOLOCATION (LAT / LNG)'),
+                  _buildSectionHeader('GEOLOCATION (LAT / LNG / RADIUS KM)'),
                   Row(
                     children: [
                       Expanded(
@@ -853,6 +886,19 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
                           style: const TextStyle(color: Colors.white),
                           decoration:
                               _inputDecoration().copyWith(hintText: 'Lng'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          controller: _radiusCtrl,
+                          style: const TextStyle(color: Colors.white),
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly
+                          ],
+                          decoration:
+                              _inputDecoration().copyWith(hintText: 'km'),
                         ),
                       ),
                     ],
@@ -1034,6 +1080,37 @@ class _AdvancedFiltersDrawerState extends ConsumerState<AdvancedFiltersDrawer> {
             color: selected ? color : Colors.white38,
             fontWeight: FontWeight.bold,
             fontSize: 16,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCombineModeButton({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected
+              ? const Color(0xFF3D7EFF).withOpacity(0.15)
+              : const Color(0xFF1A1A1A),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: selected ? const Color(0xFF3D7EFF) : const Color(0xFF262626),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? const Color(0xFF3D7EFF) : Colors.white54,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ),
